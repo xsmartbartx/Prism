@@ -1,0 +1,47 @@
+[project]
+name = "prism"
+version = "0.1.0"
+description = "Self-hosted data platform — import, model, query, and visualize data declaratively"
+requires-python = ">=3.12"
+authors = [
+    { name = "xsmartbartx" },
+]
+dependencies = [
+    "pyarrow>=17.0.0",
+    "pydantic>=2.0.0",
+    "babel>=2.14.0",
+    "openpyxl>=3.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=5.0.0",
+    "pytest-benchmark>=4.0.0",
+    "ruff>=0.5.0",
+    "mypy>=1.10.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+
+[build-system]
+requires = ["setuptools>=75.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["core*", "data*", "presentation*", "security*", "insight*", "schemas*", "catalog*"]

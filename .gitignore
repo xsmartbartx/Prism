@@ -1,18 +1,40 @@
-# Build and Release Folders
-bin-debug/
-bin-release/
-[Oo]bj/
-[Bb]in/
+# Prism — self-hosted data platform
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
 
-# Other files and folders
-.settings/
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
 
-# Executables
-*.swf
-*.air
-*.ipa
-*.apk
+# OS
+.DS_Store
+Thumbs.db
 
-# Project files, i.e. `.project`, `.actionScriptProperties` and `.flexProperties`
-# should NOT be excluded as they contain compiler settings and other important
-# information for Eclipse / Flash Builder.
+# Project artifacts
+*.parquet
+*.snappy
+*.zstd
+data/dataset-store/
+*.db
+*.sqlite
+
+# Docker
+docker-compose.override.yml
+
+# Test artifacts
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
