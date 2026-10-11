@@ -18,7 +18,7 @@ Phase 0 — Walking Skeleton (in progress)
 |---|---|
 | Type System v0 | ✅ Done — Integer, Float, String, Date, Boolean with locale-aware parsing |
 | Binding Schema v0 | ✅ Done — ColumnContract, SourceBinding, validation, serialization |
-| Structure Detector v0 | 🔜 Next |
+| Structure Detector v0 | ✅ Done — CSV header detection, data region detection, confidence scoring |
 | Type Inference v0 | 🔜 Next |
 | Binding Compiler v0 | 🔜 Next |
 
