@@ -69,6 +69,14 @@ class TypeInferenceEngine:
     ) -> ColumnInferenceResult:
         """Infer the best type for a single column from sampled values.
 
+        Strategy:
+          1. Test specific types (boolean, integer, float, date) against values.
+          2. If the best specific type meets the threshold, use it.
+          3. If no specific type meets the threshold, fall back to string.
+          4. Ambiguity detection: if the best specific type is below threshold
+             AND string is the only universal fallback, flag as ambiguous
+             (the data might have a mixed type that needs human resolution).
+
         Args:
             column_name: The name of the column.
             values: Sampled string values from the column.
@@ -82,22 +90,25 @@ class TypeInferenceEngine:
             return ColumnInferenceResult(
                 column_name=column_name,
                 candidates=[
-                    TypeCandidate(
-                        type_name="string",
-                        confidence=1.0,
-                        parsable_count=0,
-                        total_count=0,
-                    )
+                    TypeCandidate(type_name="string", confidence=1.0, parsable_count=0, total_count=0),
                 ],
                 is_ambiguous=False,
             )
 
         if total > self._max_sample:
             non_empty = non_empty[: self._max_sample]
+            total = len(non_empty)  # Update total to reflect sampled count
 
-        # Test each type against the values
-        candidates: list[TypeCandidate] = []
-        for type_name, _ in _TYPE_TESTS:
+        # Test specific types first (string is the fallback)
+        specific_type_tests = [
+            ("boolean", "boolean"),
+            ("integer", "integer"),
+            ("float", "float"),
+            ("date", "date"),
+        ]
+
+        specific_candidates: list[TypeCandidate] = []
+        for type_name, _ in specific_type_tests:
             type_instance = _build_type_instance(type_name, self._locale)
             parsable_count = 0
             samples: list[str] = []
@@ -114,7 +125,7 @@ class TypeInferenceEngine:
                         failures.append(value)
 
             confidence = parsable_count / total
-            candidates.append(
+            specific_candidates.append(
                 TypeCandidate(
                     type_name=type_name,
                     confidence=round(confidence, 4),
@@ -125,15 +136,44 @@ class TypeInferenceEngine:
                 )
             )
 
-        candidates.sort(key=lambda c: c.confidence, reverse=True)
-        best = candidates[0]
-        is_ambiguous = best.confidence < self._confidence_threshold
+        # Sort specific types by confidence descending, then by type priority
+        specific_candidates.sort(key=lambda c: (-c.confidence, self._type_priority(c.type_name)))
+
+        # String is always the fallback
+        string_candidate = TypeCandidate(
+            type_name="string",
+            confidence=1.0,
+            parsable_count=total,
+            total_count=total,
+            sample_values=non_empty[:5],
+            failure_samples=[],
+        )
+
+        # Determine the best overall type
+        best_specific = specific_candidates[0] if specific_candidates else None
+        all_candidates = specific_candidates + [string_candidate]
+
+        if best_specific and best_specific.confidence >= self._confidence_threshold:
+            # A specific type is good enough — use it
+            is_ambiguous = False
+        elif best_specific and best_specific.confidence >= 0.5:
+            # Partially confident — ambiguous (needs human review)
+            is_ambiguous = True
+        else:
+            # Fall back to string, not ambiguous
+            is_ambiguous = False
 
         return ColumnInferenceResult(
             column_name=column_name,
-            candidates=candidates,
+            candidates=all_candidates,
             is_ambiguous=is_ambiguous,
         )
+
+    @staticmethod
+    def _type_priority(type_name: str) -> int:
+        """Priority for tie-breaking: more specific types win."""
+        order = ["boolean", "integer", "float", "date", "string"]
+        return order.index(type_name) if type_name in order else 99
 
     def infer_dataset(
         self,
