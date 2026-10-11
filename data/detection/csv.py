@@ -87,11 +87,34 @@ def detect_structure(
             confidence_score=0.0,
         )
 
-    max_cols = max(len(row) for row in rows)
-    column_count = max_cols
-    profiles = profile_rows(rows)
+    # Skip leading blank rows before structure detection
+    first_data_idx = 0
+    while first_data_idx < len(rows):
+        row = rows[first_data_idx]
+        if [c for c in row if c.strip()]:
+            break
+        first_data_idx += 1
 
-    header_row_index, header_confidence = detect_header(rows, profiles)
+    # Work with non-blank rows for detection
+    non_blank_rows = rows[first_data_idx:]
+    if not non_blank_rows:
+        return DetectedStructure(
+            header_row_index=-1,
+            data_start_row=len(rows),
+            column_count=0,
+            confidence=DetectionConfidence.NONE,
+            confidence_score=0.0,
+        )
+
+    max_cols = max(len(row) for row in non_blank_rows)
+    column_count = max_cols
+    profiles = profile_rows(non_blank_rows)
+
+    header_row_index, header_confidence = detect_header(non_blank_rows, profiles)
+
+    # Adjust header/data row indices to account for leading blank rows
+    if header_row_index >= 0:
+        header_row_index += first_data_idx
     data_start_row, data_end_row = detect_data_region(rows, header_row_index)
 
     # Build column names
@@ -109,7 +132,8 @@ def detect_structure(
         column_names = [f"column_{i}" for i in range(column_count)]
 
     overall_confidence = _calculate_confidence(
-        rows, header_row_index, header_confidence, data_start_row, column_count
+        non_blank_rows, max(header_row_index - first_data_idx, 0) if header_row_index >= 0 else header_row_index,
+        header_confidence, data_start_row - first_data_idx, column_count
     )
 
     return DetectedStructure(

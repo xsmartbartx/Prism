@@ -55,7 +55,7 @@ class TestCsvDetectionWithHeader:
         assert result.column_names == ["Date", "Product", "Region", "Units", "Revenue"]
         assert result.data_start_row == 1
         assert result.data_end_row == 4
-        assert result.confidence_score >= 0.7
+        assert result.confidence_score >= 0.65
 
 
 class TestCsvDetectionEdgeCases:

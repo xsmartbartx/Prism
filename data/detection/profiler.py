@@ -18,7 +18,7 @@ _NUMERIC_PATTERN = re.compile(
 )
 
 _BOOLEAN_VALUES: frozenset = frozenset({
-    "true", "false", "yes", "no", "y", "n", "t", "f",
+    "true", "false", "yes", "no", "y", "n", "t", "f", "1", "0",
     "TRUE", "FALSE", "YES", "NO",
 })
 
