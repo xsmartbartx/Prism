@@ -149,9 +149,13 @@ class TypeInferenceEngine:
             failure_samples=[],
         )
 
-        # Determine the best overall type
-        best_specific = specific_candidates[0] if specific_candidates else None
+        # Merge and sort ALL candidates by confidence descending, then type priority.
+        # This ensures string appears first when no specific type parses the data.
         all_candidates = specific_candidates + [string_candidate]
+        all_candidates.sort(key=lambda c: (-c.confidence, self._type_priority(c.type_name)))
+
+        # Determine the best overall type (use specific types for ambiguity logic)
+        best_specific = specific_candidates[0] if specific_candidates else None
 
         if best_specific and best_specific.confidence >= self._confidence_threshold:
             # A specific type is good enough — use it
