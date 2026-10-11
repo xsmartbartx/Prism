@@ -10,6 +10,7 @@ from core.types.float import FloatType
 from core.types.string import StringType
 from core.types.date import DateType
 from core.types.boolean import BooleanType
+from core.types.column import ColumnContract, DriftPolicy
 
 __all__ = [
     "DataType",
@@ -19,4 +20,6 @@ __all__ = [
     "StringType",
     "DateType",
     "BooleanType",
+    "ColumnContract",
+    "DriftPolicy",
 ]

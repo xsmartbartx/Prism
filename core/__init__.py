@@ -13,6 +13,8 @@ from core.types import (
     DateType,
     BooleanType,
     DataRole,
+    ColumnContract,
+    DriftPolicy,
 )
 
 __all__ = [
@@ -27,4 +29,6 @@ __all__ = [
     "DateType",
     "BooleanType",
     "DataRole",
+    "ColumnContract",
+    "DriftPolicy",
 ]

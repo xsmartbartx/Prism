@@ -1,0 +1,1 @@
+"""Data layer — Ingestion: binding, compiler, load runner, dataset store."""
