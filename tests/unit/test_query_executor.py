@@ -69,8 +69,11 @@ class TestFiltering:
             filters=(FilterSpec(column="age", operator=FilterOp.LT, value=30),),
         )
         result = self.executor.execute(plan, ROWS)
-        assert result.row_count == 1
-        assert result.rows[0]["name"] == "Eve"
+        # Bob (25) and Eve (28) are both < 30
+        assert result.row_count == 2
+        names = {r["name"] for r in result.rows}
+        assert "Bob" in names
+        assert "Eve" in names
 
     def test_filter_lte(self) -> None:
         plan = ExecutionPlan(
@@ -78,7 +81,8 @@ class TestFiltering:
             filters=(FilterSpec(column="age", operator=FilterOp.LTE, value=28),),
         )
         result = self.executor.execute(plan, ROWS)
-        assert result.row_count == 1
+        # Bob (25) and Eve (28) are both <= 28
+        assert result.row_count == 2
 
     def test_multiple_filters(self) -> None:
         """All filters must match (AND logic)."""

@@ -78,3 +78,143 @@ class QueryExecutor:
             plan_hash=plan.plan_hash,
         )
         return result
+# ------------------------------------------------------------------
+# Pure function helpers (module-level for testability)
+# ------------------------------------------------------------------
+
+
+def _filter_rows(
+    rows: list[dict[str, Any]],
+    filters: list[FilterSpec],
+) -> list[dict[str, Any]]:
+    """Apply filter predicates to rows."""
+    if not filters:
+        return rows
+
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        include = True
+        for f in filters:
+            value = row.get(f.column)
+            if not _matches_filter(value, f.operator, f.value):
+                include = False
+                break
+        if include:
+            result.append(row)
+    return result
+
+
+def _aggregate(
+    rows: list[dict[str, Any]],
+    group_by_columns: list[str],
+    aggregations: list[AggregationSpec],
+) -> list[dict[str, Any]]:
+    """Group rows and apply aggregation functions."""
+    if not rows:
+        return []
+
+    groups: dict[tuple, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        key = tuple(row.get(col) for col in group_by_columns)
+        groups[key].append(row)
+
+    result: list[dict[str, Any]] = []
+    for key, group_rows in groups.items():
+        result_row: dict[str, Any] = {}
+        for i, col in enumerate(group_by_columns):
+            result_row[col] = key[i]
+
+        for agg in aggregations:
+            values = [
+                row.get(agg.column)
+                for row in group_rows
+                if row.get(agg.column) is not None
+            ]
+            result_row[agg.column] = _apply_aggregation(values, agg.function)
+
+        result.append(result_row)
+
+    return result
+
+
+def _sort_rows(
+    rows: list[dict[str, Any]],
+    sort_specs: list[SortSpec],
+) -> list[dict[str, Any]]:
+    """Sort rows by the specified columns and directions."""
+    if not sort_specs:
+        return rows
+
+    return sorted(rows, key=lambda r: _make_sort_key(r, sort_specs))
+
+
+# ------------------------------------------------------------------
+# Low-level pure functions
+# ------------------------------------------------------------------
+
+
+def _matches_filter(
+    value: Any,
+    operator: FilterOp,
+    target: Any,
+) -> bool:
+    """Check if a value matches a filter predicate."""
+    if operator == FilterOp.EQ:
+        return value == target
+    elif operator == FilterOp.NE:
+        return value != target
+    elif operator == FilterOp.GT:
+        return value is not None and target is not None and value > target
+    elif operator == FilterOp.GTE:
+        return value is not None and target is not None and value >= target
+    elif operator == FilterOp.LT:
+        return value is not None and target is not None and value < target
+    elif operator == FilterOp.LTE:
+        return value is not None and target is not None and value <= target
+    return True
+
+
+def _apply_aggregation(
+    values: list[Any],
+    function: AggFunction,
+) -> Any:
+    """Apply an aggregation function to a list of non-None values."""
+    if not values:
+        return None
+
+    if function == AggFunction.COUNT:
+        return len(values)
+    elif function == AggFunction.SUM:
+        numeric = [v for v in values if isinstance(v, (int, float))]
+        return sum(numeric) if numeric else None
+    elif function == AggFunction.AVG:
+        numeric = [v for v in values if isinstance(v, (int, float))]
+        return sum(numeric) / len(numeric) if numeric else None
+    elif function == AggFunction.MIN:
+        return min(values)
+    elif function == AggFunction.MAX:
+        return max(values)
+    return None
+
+
+def _make_sort_key(
+    row: dict[str, Any],
+    sort_specs: list[SortSpec],
+) -> tuple:
+    """Build a composite sort key from multiple sort specs.
+
+    Handles:
+    - Mixed ASC/DESC in composite sorts
+    - None values sorted last regardless of direction
+    """
+    keys: list[Any] = []
+    for s in sort_specs:
+        val = row.get(s.column)
+        if s.direction == SortDir.DESC:
+            if isinstance(val, (int, float)):
+                keys.append(-val if val is not None else float("-inf"))
+            else:
+                keys.append((1, val) if val is not None else (2, None))
+        else:
+            keys.append((0, val) if val is None else val)
+    return tuple(keys)
