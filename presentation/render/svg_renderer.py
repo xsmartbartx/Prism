@@ -4,6 +4,11 @@ import math
 from typing import Any
 from presentation.spec.view_spec import EncodingChannel, MarkType, ViewSpec
 
+_COLORS = [
+    "#4e79a7", "#f28e2b", "#e15759", "#76b7b2",
+    "#59a14f", "#edc948", "#b07aa1", "#ff9da7",
+]
+
 class SvgRenderer:
     def render(self, spec: ViewSpec, rows: list[dict[str, Any]]) -> str:
         if not rows: return self._empty(spec)
@@ -122,9 +127,52 @@ class SvgRenderer:
                 svg += f'<circle cx="{px:.1f}" cy="{py:.1f}" r="4" fill="{color}"/>'
         svg += "</svg>"
         return svg
-    def _line(self, spec: ViewSpec, rows: list[dict[str, Any]]) -> str: return '<svg><text>Line</text></svg>'
     @staticmethod
-    def _xml(self, s: str) -> str:
+    def _xml(s: str) -> str:
         return (s.replace("&", "&amp;").replace("<", "&lt;")
                 .replace(">", "&gt;").replace('"', "&quot;")
                 .replace("'", "&apos;"))
+
+
+# ------------------------------------------------------------------
+# Pure functions
+# ------------------------------------------------------------------
+
+
+def _to_num(value: object) -> float:
+    if value is None: return 0.0
+    if isinstance(value, (int, float)): return float(value)
+    try: return float(str(value).replace(",", "").replace("$", ""))
+    except: return 0.0
+
+
+def _yrange(vals: list[float]) -> tuple[float, float]:
+    if not vals: return (0, 1)
+    vmin, vmax = min(vals), max(vals)
+    if vmin == vmax: return (max(0, vmin - 1), vmin + 1)
+    pad = (vmax - vmin) * 0.05
+    return (vmin - pad, vmax + pad)
+
+
+def _ticks(ymin: float, ymax: float, n: int = 5) -> list[float]:
+    if ymin == ymax: return [ymin]
+    span = ymax - ymin
+    raw = span / max(n, 1)
+    mag = 10 ** math.floor(math.log10(raw)) if raw > 0 else 1
+    res = raw / max(mag, 1)
+    nice = (1 if res <= 1.5 else 2 if res <= 3.5 else 5 if res <= 7.5 else 10) * mag
+    start = int(ymin / max(nice, 1)) * nice
+    ticks, cur = [], start
+    while cur <= ymax + nice: ticks.append(cur); cur += nice
+    return ticks
+
+
+def _ypos(val: float, ch: float, ymin: float, ymax: float) -> float:
+    if ymax == ymin: return 30
+    return 30 + ch - ((val - ymin) / (ymax - ymin) * ch)
+
+
+def _bheight(val: float, ch: float, ymin: float, ymax: float) -> float:
+    yv = _ypos(val, ch, ymin, ymax)
+    yz = _ypos(max(0, ymin), ch, ymin, ymax)
+    return abs(yv - yz)
