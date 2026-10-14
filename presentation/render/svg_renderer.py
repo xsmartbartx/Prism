@@ -95,7 +95,7 @@ class SvgRenderer:
                 )
         out.append("</svg>")
         return "\n".join(out)
-def _render_bar(
+    def _render_bar(
         self, spec: ViewSpec, rows: list[dict[str, Any]]
     ) -> str:
         x_enc = spec.encoding_for(EncodingChannel.X)
@@ -232,4 +232,115 @@ def _render_bar(
                     f'font-size="9">{self._xml_escape(cats[i])}</text>'
                 )
         out.append("</svg>")
+    def _empty_chart(self, spec: ViewSpec) -> str:
+            w = max(spec.width, 200)
+            h = max(spec.height, 100)
+            lines = [
+                f'<svg xmlns="http://www.w3.org/2000/svg" '
+                f'width="{w}" height="{h}" '
+                f'viewBox="0 0 {w} {h}" '
+                f'font-family="system-ui, -apple-system, sans-serif" '
+                f'style="background: white">',
+                f'<text x="{w / 2}" y="{h / 2}" '
+                f'text-anchor="middle" dominant-baseline="central" '
+                f'font-size="13" fill="#999">'
+                f'No data to display</text>',
+                "</svg>",
+            ]
+            return "\n".join(lines)
+
+    @staticmethod
+    def _svg_header(out: list[str], width: int, height: int) -> None:
+        out.append(
+            f'<svg xmlns="http://www.w3.org/2000/svg" '
+            f'width="{width}" height="{height}" '
+            f'viewBox="0 0 {width} {height}" '
+            f'font-family="system-ui, -apple-system, sans-serif" '
+            f'style="background: white">'
+        )
+
+    @staticmethod
+    def _xml_escape(s: str) -> str:
+        return (
+            s.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+            .replace("'", "&apos;")
+        )
+
+
+# Pure helper functions
+
+
+def _to_number(value: object) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(str(value).replace(",", "").replace("$", "").replace("€", ""))
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _compute_y_range(values: list[float]) -> tuple[float, float]:
+    if not values:
+        return (0, 1)
+    v_min = min(values)
+    v_max = max(values)
+    if v_min == v_max:
+        if v_min == 0:
+            return (0, 1)
+        pad = abs(v_min) * 0.1
+        return (max(0, v_min - pad), v_min + pad)
+    pad = (v_max - v_min) * 0.05
+    return (v_min - pad, v_max + pad)
+
+
+def _nice_ticks(y_min: float, y_max: float, target_count: int = 5) -> list[float]:
+    if y_min == y_max:
+        return [y_min]
+    span = y_max - y_min
+    raw_step = span / max(target_count, 1)
+    magnitude = 10 ** math.floor(math.log10(raw_step)) if raw_step > 0 else 1
+    residual = raw_step / magnitude if magnitude > 0 else 1
+    if residual <= 1.5:
+        nice_step = 1 * magnitude
+    elif residual <= 3.5:
+        nice_step = 2 * magnitude
+    elif residual <= 7.5:
+        nice_step = 5 * magnitude
+    else:
+        nice_step = 10 * magnitude
+    start = math.floor(y_min / nice_step) * nice_step if nice_step > 0 else 0
+    ticks = []
+    current = start
+    while current <= y_max + nice_step:
+        ticks.append(current)
+        current += nice_step
+    return ticks
+
+
+def _y_pos(value: float, chart_h: float, y_min: float, y_max: float) -> float:
+    if y_max == y_min:
+        return _MARGIN_TOP
+    return _MARGIN_TOP + chart_h - ((value - y_min) / (y_max - y_min) * chart_h)
+
+
+def _bar_height(value: float, chart_h: float, y_min: float, y_max: float) -> float:
+    y_val = _y_pos(value, chart_h, y_min, y_max)
+    baseline = y_min if y_min < 0 else 0
+    y_zero = _y_pos(baseline, chart_h, y_min, y_max)
+    return abs(y_val - y_zero)
+
+
+def _format_number(value: float) -> str:
+    if value == int(value):
+        return str(int(value))
+    if abs(value) >= 1_000_000:
+        return f"{value / 1_000_000:.1f}M"
+    if abs(value) >= 1_000:
+        return f"{value / 1_000:.1f}K"
+    return f"{value:.2f}"
         return "\n".join(out)
