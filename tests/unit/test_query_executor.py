@@ -142,21 +142,23 @@ class TestAggregation:
         assert by_dept["Marketing"] == 72500  # (80000+65000)/2
 
     def test_min_and_max(self) -> None:
+        """MIN and MAX work on separate columns."""
         plan = ExecutionPlan(
-            select_columns=("department", "salary", "salary"),
+            select_columns=("department", "age", "salary"),
             group_by_columns=("department",),
             aggregations=(
                 AggregationSpec(column="age", function=AggFunction.MIN),
-                AggregationSpec(column="age", function=AggFunction.MAX),
+                AggregationSpec(column="salary", function=AggFunction.MAX),
             ),
         )
         result = self.executor.execute(plan, ROWS)
         by_dept: dict[str, dict] = {}
         for r in result.rows:
             by_dept[r["department"]] = r
-        assert by_dept["Engineering"]["age"] == 25  # MIN age
-        # MAX is the second "age" column in select_columns
-        assert by_dept["Marketing"]["age"] == 35  # MAX age
+        assert by_dept["Engineering"]["age"] == 25  # MIN age in Engineering
+        assert by_dept["Engineering"]["salary"] == 70000  # MAX salary in Engineering
+        assert by_dept["Marketing"]["age"] == 30  # MIN age in Marketing (Diana)
+        assert by_dept["Marketing"]["salary"] == 80000  # MAX salary in Marketing
 
 
 class TestSort:

@@ -56,12 +56,10 @@ class TestCompilerValidation:
         assert any("fake_col" in err for err in result.errors)
 
     def test_rejects_unknown_aggregation_function(self) -> None:
-        spec = QuerySpec(
-            dimensions=["department"],
-            measures=[AggregationSpec(column="salary", function="bogus")],  # type: ignore
-        )
-        result = self.compiler.compile(spec)
-        assert not result.success
+        """Pydantic validates enum at construction — expect ValidationError."""
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            _ = AggregationSpec(column="salary", function="bogus")  # type: ignore
 
     def test_rejects_measures_without_dimensions(self) -> None:
         spec = QuerySpec(

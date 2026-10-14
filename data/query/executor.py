@@ -206,15 +206,23 @@ def _make_sort_key(
     Handles:
     - Mixed ASC/DESC in composite sorts
     - None values sorted last regardless of direction
+    - Strings reverse-ordered by negating character ordinals for DESC
     """
     keys: list[Any] = []
     for s in sort_specs:
         val = row.get(s.column)
         if s.direction == SortDir.DESC:
-            if isinstance(val, (int, float)):
-                keys.append(-val if val is not None else float("-inf"))
+            if val is None:
+                keys.append((2,))  # None always last
+            elif isinstance(val, (int, float)):
+                keys.append((-val,))
             else:
-                keys.append((1, val) if val is not None else (2, None))
+                # Strings: reverse by negating character ordinals
+                keys.append(tuple(-ord(c) for c in str(val)))
         else:
-            keys.append((0, val) if val is None else val)
+            # ASC
+            if val is None:
+                keys.append((1,))  # None goes last in ASC too
+            else:
+                keys.append((0, val) if isinstance(val, (int, float)) else (0,) + tuple(ord(c) for c in str(val)))
     return tuple(keys)
