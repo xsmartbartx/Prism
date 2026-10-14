@@ -1,0 +1,1 @@
+"""Presentation layer — view specs, rendering, dashboards, exploration."""

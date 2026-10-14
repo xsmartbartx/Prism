@@ -1,0 +1,1 @@
+"""View spec schema — the declarative grammar of a visual."""

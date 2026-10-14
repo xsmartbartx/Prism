@@ -109,5 +109,4 @@ class QuerySpec(BaseModel):
         ge=0,
     )
 
-    class Config:
-        frozen = True  # Immutable — QuerySpec is always value-semantic
+    model_config = ConfigDict(frozen=True)  # Immutable — value-semantic
