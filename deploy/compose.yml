@@ -1,0 +1,37 @@
+# Prism — development / single-node deployment
+# Brings up the full platform on one machine.
+
+services:
+  prism:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: prism:latest
+    container_name: prism
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PRISM_ENV: production
+      PRISM_SHARE_SECRET: ${PRISM_SHARE_SECRET:-change-me-in-production}
+    volumes:
+      - prism_data:/var/lib/prism
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  # Development database (optional — Phase 1)
+  # postgres:
+  #   image: postgres:16-alpine
+  #   environment:
+  #     POSTGRES_DB: prism
+  #     POSTGRES_USER: prism
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-prism}
+  #   volumes:
+  #     - pg_data:/var/lib/postgresql/data
+
+volumes:
+  prism_data:
+  # pg_data:
