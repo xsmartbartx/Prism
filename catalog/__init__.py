@@ -1,7 +1,8 @@
-"""Catalog module — searchable index and audit log for artifacts."""
+"""Catalog module — searchable index, audit log, and sharing."""
 
 from catalog.models import ArtifactType, AuditAction, AuditEvent, CatalogEntry
 from catalog.index import CatalogIndex
+from catalog.sharing import ShareToken, ShareManager
 
 __all__ = [
     "ArtifactType",
@@ -9,4 +10,6 @@ __all__ = [
     "AuditEvent",
     "CatalogEntry",
     "CatalogIndex",
+    "ShareToken",
+    "ShareManager",
 ]
