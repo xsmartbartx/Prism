@@ -35,13 +35,17 @@ services:
     environment:
       PRISM_ENV: production
       PRISM_BASE_URL: https://${PRISM_DOMAIN:?set PRISM_DOMAIN in /opt/prism/.env}
-      PRISM_DATABASE_URL: postgresql+psycopg://prism:${POSTGRES_PASSWORD}@postgres:5432/prism
+      # The password is passed on its own and escaped by Prism, so any character is safe.
+      PRISM_DATABASE_URL: postgresql+psycopg://prism@postgres:5432/prism
+      PRISM_DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
       PRISM_SECRET_KEY: ${PRISM_SECRET_KEY:?set PRISM_SECRET_KEY in /opt/prism/.env}
       PRISM_LICENSE_KEY: ${PRISM_LICENSE_KEY:-}
       PRISM_MAX_UPLOAD_MB: ${PRISM_MAX_UPLOAD_MB:-100}
       PRISM_LOG_LEVEL: ${PRISM_LOG_LEVEL:-INFO}
-      # Only reachable through the edge Caddy on this network.
+      # Only reachable through the edge Caddy on this network, which only accepts Cloudflare
+      # (cloudflare_only), so Cloudflare's header names the real client for rate limiting.
       PRISM_FORWARDED_ALLOW_IPS: "*"
+      PRISM_CLIENT_IP_HEADER: CF-Connecting-IP
     volumes:
       - data:/var/lib/prism # dataset versions (Parquet), uploads, local backups: back it up
     read_only: true

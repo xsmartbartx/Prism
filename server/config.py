@@ -29,6 +29,14 @@ class Settings(BaseSettings):
         default=None,
         description="SQLAlchemy URL. Defaults to SQLite inside data_dir.",
     )
+    database_password: str | None = Field(
+        default=None,
+        description="Database password, kept out of database_url so any character is safe.",
+    )
+    client_ip_header: str | None = Field(
+        default=None,
+        description="Real client IP header from a trusted edge (e.g. CF-Connecting-IP).",
+    )
     secret_key: str | None = Field(default=None, description="HMAC key for tokens.")
     base_url: str = Field(default="http://localhost:8080", description="Public URL of the app.")
     host: str = "0.0.0.0"
@@ -78,7 +86,12 @@ class Settings(BaseSettings):
     @property
     def resolved_database_url(self) -> str:
         if self.database_url:
-            return self.database_url
+            if not self.database_password:
+                return self.database_url
+            from sqlalchemy.engine import make_url
+
+            url = make_url(self.database_url).set(password=self.database_password)
+            return url.render_as_string(hide_password=False)
         return f"sqlite:///{self.data_dir / 'prism.db'}"
 
     @property

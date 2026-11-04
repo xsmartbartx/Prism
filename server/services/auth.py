@@ -393,6 +393,7 @@ class AuthService:
             if user is None:
                 raise NotFound("Account not found")
             user.password_hash = hash_password(password)
+            user.is_active = True  # an admin-issued reset link re-enables the account
             self.revoke_all_sessions(s, user.id)
         else:
             if user is None:

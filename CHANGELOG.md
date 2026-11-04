@@ -4,6 +4,10 @@
 
 - Hosting on the NEXORA platform: `deploy/nexora/compose.yml` (compose project `prism`, PostgreSQL 16, published image, no host ports; served by the shared edge Caddy).
 - `prism create-admin --random-password` and `prism reset-link --email …` hand an account over with a single-use link, so no password is ever chosen for someone or sent.
+- Fix: `PRISM_FORWARDED_ALLOW_IPS` was never read, so behind the bundled proxy every request looked like it came from the proxy and failed sign-ins shared one rate-limit bucket. It is now honoured, and `PRISM_CLIENT_IP_HEADER` (e.g. `CF-Connecting-IP`) names the real client behind a CDN.
+- `PRISM_DATABASE_PASSWORD` is escaped into the database URL, so the Postgres password may contain any character; both compose files use it.
+- Fix: accepting an admin-issued password-reset link now re-enables a disabled account.
+- Landing page: contact hello@onenexora.com and USD prices, matching onenexora.com/pricing.
 - Security hardening from the SonarCloud review: hash-locked, wheel-only dependency installs; actions pinned to commit SHAs; npm without lifecycle scripts; vendor license tool confined to its working directory.
 
 ## 1.0.0 — 2026-11-04

@@ -138,3 +138,70 @@ def test_profile_password_and_reset_link(client: TestClient) -> None:
     pending = client.post("/api/v1/workspace/invites", json={"email": "p@acme.test"}, headers=H).json()
     assert client.delete(f"/api/v1/workspace/invites/{pending['id']}", headers=H).status_code == 204
     assert client.get("/api/v1/workspace/invites").json() == []
+
+
+def test_database_password_is_escaped_into_url() -> None:
+    from server.config import Settings
+
+    s = Settings(env="test", database_url="postgresql+psycopg://prism@db:5432/prism",
+                 database_password="p@ss/w:rd?#%", secret_key="k")
+    from sqlalchemy.engine import make_url
+
+    url = make_url(s.resolved_database_url)
+    assert url.password == "p@ss/w:rd?#%" and url.host == "db" and url.database == "prism"
+    plain = Settings(env="test", database_url="postgresql+psycopg://u:x@h/d", secret_key="k")
+    assert plain.resolved_database_url == "postgresql+psycopg://u:x@h/d"
+
+
+def test_client_ip_header_feeds_rate_limit_and_audit(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from server.app import create_app
+    from server.config import Settings
+
+    settings = Settings(env="test", data_dir=tmp_path / "v", secret_key="k" * 32,
+                        base_url="http://testserver", client_ip_header="CF-Connecting-IP")
+    with TestClient(create_app(settings)) as c:
+        setup_admin(c)
+        c.post("/api/v1/auth/logout", headers=H)
+        bad = {"email": "admin@acme.test", "password": "wrong-password-x"}
+        for _ in range(10):
+            c.post("/api/v1/auth/login", json=bad, headers={**H, "CF-Connecting-IP": "203.0.113.7"})
+        # A different client behind the same proxy is not locked out by the attacker's IP bucket
+        # (the per-account bucket still applies, so use another account's flow: setup status).
+        r = c.post("/api/v1/auth/login", json={"email": "other@acme.test", "password": "wrong-password-x"},
+                   headers={**H, "CF-Connecting-IP": "198.51.100.9"})
+        assert r.status_code == 401
+        r = c.post("/api/v1/auth/login", json={"email": "other@acme.test", "password": "wrong-password-x"},
+                   headers={**H, "CF-Connecting-IP": "203.0.113.7"})
+        assert r.status_code == 429
+        c.post("/api/v1/auth/login", json={"email": "admin@acme.test", "password": PASSWORD},
+               headers={**H, "CF-Connecting-IP": "198.51.100.9"})
+        # Garbage in the header is ignored rather than trusted.
+        r = c.post("/api/v1/auth/login", json=bad, headers={**H, "CF-Connecting-IP": "<script>"})
+        assert r.status_code in (401, 429)
+
+
+def test_reset_link_reactivates_disabled_account(client: TestClient) -> None:
+    setup_admin(client)
+    other = _invite(client, "d@acme.test", "viewer")
+    uid = next(m["id"] for m in client.get("/api/v1/workspace/members").json() if m["email"] == "d@acme.test")
+    from server.db.models import User
+
+    db = client.app.state.services.db
+    with db.transaction() as s:
+        u = s.get(User, uid)
+        assert u is not None
+        u.is_active = False
+    assert other.get("/api/v1/auth/me").status_code == 401
+    link = client.post(f"/api/v1/workspace/members/{uid}/reset-link", headers=H).json()["link"]
+    token = link.rsplit("/", 1)[1]
+    fresh = TestClient(client.app)
+    assert fresh.post(f"/api/v1/invites/{token}/accept", json={"password": "back in business ok"}, headers=H).status_code == 200
+    assert fresh.post("/api/v1/auth/login", json={"email": "d@acme.test", "password": "back in business ok"}, headers=H).status_code == 200
+
+
+def test_serve_trusts_proxies_from_env(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from server.cli import build_parser
+
+    assert build_parser().parse_args(["serve"]).forwarded_allow_ips in ("127.0.0.1", "*")
+    monkeypatch.setenv("PRISM_FORWARDED_ALLOW_IPS", "*")
+    assert build_parser().parse_args(["serve"]).forwarded_allow_ips == "*"

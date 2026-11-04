@@ -28,6 +28,8 @@ Edit `.env`:
 | `PRISM_MAX_UPLOAD_MB` | no | Server-side upload ceiling (default 100) |
 | `PRISM_BACKUP_KEEP` | no | Daily backups to keep (default 14) |
 | `PRISM_DATABASE_URL` | no | PostgreSQL URL; empty = embedded SQLite |
+| `PRISM_DATABASE_PASSWORD` | no | Database password, escaped into the URL (compose sets it from `POSTGRES_PASSWORD`) |
+| `PRISM_CLIENT_IP_HEADER` | no | Client-IP header of a CDN that is the only way in (e.g. `CF-Connecting-IP`) |
 | `PRISM_IMAGE` | no | Image tag, e.g. `ghcr.io/xsmartbartx/prism:1.0.0` (pin in production) |
 
 ## 2. Start
@@ -48,7 +50,7 @@ SQLite (WAL mode) is the default and suits most single-node installs. For higher
 ```bash
 # in .env
 POSTGRES_PASSWORD=<strong password>
-PRISM_DATABASE_URL=postgresql+psycopg://prism:<password>@postgres:5432/prism
+PRISM_DATABASE_URL=postgresql+psycopg://prism@postgres:5432/prism   # no password here
 
 docker compose --profile postgres up -d
 ```

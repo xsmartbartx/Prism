@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import os
 import sys
 from typing import TYPE_CHECKING
 
@@ -171,8 +172,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--port", type=int)
     s.add_argument(
         "--forwarded-allow-ips",
-        default="127.0.0.1",
-        help="Proxies trusted for X-Forwarded-* headers (comma list or *)",
+        default=os.environ.get("PRISM_FORWARDED_ALLOW_IPS", "127.0.0.1"),
+        help="Proxies trusted for X-Forwarded-* headers (comma list or *); "
+        "default from PRISM_FORWARDED_ALLOW_IPS",
     )
     s.set_defaults(func=cmd_serve)
 
