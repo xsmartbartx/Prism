@@ -58,7 +58,7 @@ where = ["."]
 include = ["core*", "data*", "presentation*", "security*", "insight*", "schemas*", "catalog*", "server*"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "C4", "RUF", "DTZ", "BLE"]
-ignore = ["E701", "E702", "RUF012", "UP042"]
+ignore = ["E701", "E702", "RUF001", "RUF002", "RUF003", "RUF012", "UP042"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["B011", "E501", "DTZ001"]
