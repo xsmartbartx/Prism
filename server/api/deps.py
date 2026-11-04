@@ -49,6 +49,9 @@ def _resolve(request: Request, *, required: bool) -> Principal | None:
             key = svc.auth.resolve_api_key(s, auth[7:].strip())
             if key is None:
                 raise Unauthorized("Invalid or revoked API key")
+            from server.services.licensing import require_feature
+
+            require_feature(svc, s, "api")
             user = s.get(User, key.user_id)
             via, key_workspace, token = "api_key", key.workspace_id, None
         elif token:

@@ -234,7 +234,7 @@ def create_dashboard(
     from server.services.licensing import require_feature
 
     with svc.db.transaction() as s:
-        require_feature(svc, s, "dashboards", current=len(svc.artifacts.list_dashboards(s, a)))
+        require_feature(svc, s, "dashboards")
         d = svc.artifacts.save_dashboard(
             s,
             a,

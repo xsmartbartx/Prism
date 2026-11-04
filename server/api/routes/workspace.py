@@ -6,8 +6,9 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
+from core.clock import utcnow
 from server.api.deps import Principal, principal, services
 from server.api.serializers import apikey_out, invite_out, user_out, workspace_out
 from server.container import Services
@@ -77,7 +78,7 @@ def create_workspace(
     from server.services.licensing import require_feature
 
     with svc.db.transaction() as s:
-        require_feature(svc, s, "workspaces", current=len(p.memberships))
+        require_feature(svc, s, "workspaces")
         slug = slugify(body.name)
         if s.scalars(select(Workspace).where(Workspace.slug == slug)).first():
             slug = f"{slug}-{p.user.id[:6]}"
@@ -199,7 +200,19 @@ def invite(
     from server.services.licensing import require_feature, seat_count
 
     with svc.db.transaction() as s:
-        require_feature(svc, s, "users", current=seat_count(s))
+        pending = (
+            s.scalar(
+                select(func.count())
+                .select_from(Invite)
+                .where(
+                    Invite.accepted_at.is_(None),
+                    Invite.kind == "invite",
+                    Invite.expires_at > utcnow(),
+                )
+            )
+            or 0
+        )
+        require_feature(svc, s, "users", current=seat_count(s) + int(pending))
         issued = svc.auth.create_invite(s, p.actor, body.email, body.role)
         inv = s.get(Invite, issued.record_id)
         assert inv is not None

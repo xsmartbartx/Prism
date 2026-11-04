@@ -19,8 +19,11 @@ PASSWORD = "correct horse battery"
 
 @pytest.fixture
 def client(tmp_path: Path) -> Iterator[TestClient]:
+    from tests.server.test_licensing import PUB, key
+
     settings = Settings(env="test", data_dir=tmp_path / "var", secret_key="k" * 32,
-                        base_url="http://testserver")
+                        base_url="http://testserver", license_public_key=PUB,
+                        license_key=key("business"))
     with TestClient(create_app(settings)) as c:
         yield c
 

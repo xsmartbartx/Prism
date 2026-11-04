@@ -199,7 +199,16 @@ def accept_invite(
     response: Response,
     svc: Services = Depends(services),
 ) -> dict[str, Any]:
+    from sqlalchemy import select
+
+    from server.db.models import User
+    from server.services.licensing import require_feature, seat_count
+
     with svc.db.transaction() as s:
+        inv = svc.auth.get_invite(s, token)
+        exists = s.scalars(select(User).where(User.email == inv.email)).first()
+        if inv.kind == "invite" and exists is None:
+            require_feature(svc, s, "users", current=seat_count(s))
         user = svc.auth.accept_invite(s, token, name=body.name, password=body.password)
     with svc.db.transaction() as s:
         issued = svc.auth.login(

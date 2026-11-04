@@ -82,11 +82,11 @@ def commit(
     a: Actor = Depends(actor),
     svc: Services = Depends(services),
 ) -> dict[str, Any]:
-    from server.services.licensing import dataset_count, require_feature
+    from server.services.licensing import require_feature
 
     with svc.db.transaction() as s:
         if not body.target_dataset_id:
-            require_feature(svc, s, "datasets", current=dataset_count(s, a.workspace_id))
+            require_feature(svc, s, "datasets")
         imp = svc.imports.get(s, a, import_id)
         loaded = svc.imports.commit(s, a, imp, body)
         out = dataset_out(loaded.dataset, loaded.version)

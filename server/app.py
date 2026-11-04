@@ -206,7 +206,16 @@ def create_app(settings: Settings | None = None, *, db: Database | None = None) 
     # Routes
     # ------------------------------------------------------------------
 
-    from server.api.routes import auth, charts, datasets, imports, public, system, workspace
+    from server.api.routes import (
+        admin,
+        auth,
+        charts,
+        datasets,
+        imports,
+        public,
+        system,
+        workspace,
+    )
 
     for r in (
         system.router,
@@ -215,6 +224,7 @@ def create_app(settings: Settings | None = None, *, db: Database | None = None) 
         imports.router,
         datasets.router,
         charts.router,
+        admin.router,
         public.router,
     ):
         app.include_router(r)

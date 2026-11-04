@@ -70,8 +70,10 @@ def _render_tile(svc: Services, s: Session, chart: Chart, theme: str | None) -> 
 
 
 def _resolve(svc: Services, s: Session, token: str, *, embed: bool) -> Share:
+    from server.services.licensing import current_state
+
     share = ArtifactService.resolve_share(s, token)
-    if embed and not share.allow_embed:
+    if embed and (not share.allow_embed or "embed" not in current_state(svc, s).plan.features):
         raise NotFound("Embedding is not enabled for this link")
     return share
 
