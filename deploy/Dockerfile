@@ -19,8 +19,6 @@ COPY data/ data/
 COPY presentation/ presentation/
 COPY catalog/ catalog/
 COPY schemas/ schemas/
-COPY security/ security/
-COPY insight/ insight/
 COPY server/ server/
 RUN python -m build --wheel --outdir /wheels
 

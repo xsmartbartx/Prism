@@ -1,7 +1,10 @@
 # Prism — single-node production deployment.
 #
 #   cp env.example .env    # set PRISM_DOMAIN and secrets
-#   docker compose up -d --build
+#   docker compose up -d
+#
+# From a source checkout (builds the image locally):
+#   docker compose -f compose.yml -f compose.build.yml up -d --build
 #
 # Caddy terminates TLS with automatic Let's Encrypt certificates for
 # PRISM_DOMAIN. Prism itself is not published to the host network.
@@ -21,10 +24,7 @@ x-prism-env: &prism-env
 
 services:
   prism:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-    image: ${PRISM_IMAGE:-prism:latest}
+    image: ${PRISM_IMAGE:-ghcr.io/xsmartbartx/prism:latest}
     restart: unless-stopped
     environment: *prism-env
     volumes:
@@ -61,7 +61,7 @@ services:
       - caddy_config:/config
 
   backup:
-    image: ${PRISM_IMAGE:-prism:latest}
+    image: ${PRISM_IMAGE:-ghcr.io/xsmartbartx/prism:latest}
     restart: unless-stopped
     depends_on:
       prism:
