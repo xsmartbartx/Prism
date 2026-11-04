@@ -79,7 +79,11 @@ def detect_structure(
         if i >= max_rows:
             break
         rows.append(row)
+    return detect_structure_rows(rows)
 
+
+def detect_structure_rows(rows: list[list[str]]) -> DetectedStructure:
+    """Detect the structure of already-parsed raw rows (any connector)."""
     if not rows:
         return DetectedStructure(
             header_row_index=-1,

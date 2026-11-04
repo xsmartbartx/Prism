@@ -11,12 +11,15 @@ immutable Import Plan (the "how").
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime
 from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
+from core.nulls import DEFAULT_NULL_TOKENS
 from core.types import ColumnContract
 
 
@@ -32,7 +35,7 @@ class RefreshMode(str, Enum):
 class ConnectorType(str, Enum):
     """Supported connector types for Phase 0."""
 
-    SPREADSHEET = "spreadsheet"    # Excel (.xlsx, .xls)
+    SPREADSHEET = "spreadsheet"    # Excel (.xlsx, .xlsm)
     CSV = "csv"                   # Delimited text files
     # More connectors added in Phase 1+
 
@@ -110,6 +113,29 @@ class SourceBinding(BaseModel):
         description="Tags for categorization and discovery.",
     )
 
+    delimiter: str | None = Field(
+        default=None,
+        max_length=1,
+        description="Field delimiter for delimited sources (sniffed when unset).",
+    )
+
+    locale: str = Field(
+        default="en_US",
+        description="Default locale for the binding; columns may override it.",
+    )
+
+    null_tokens: list[str] = Field(
+        default_factory=lambda: sorted(DEFAULT_NULL_TOKENS),
+        description="Cell values (case-insensitive) treated as null for non-text columns.",
+    )
+
+    max_quarantine_ratio: float = Field(
+        default=0.05,
+        ge=0.0,
+        le=1.0,
+        description="Fail the load if more than this fraction of rows are quarantined.",
+    )
+
     created_at: datetime | None = Field(
         default=None,
         description="Timestamp when this binding version was created.",
@@ -142,6 +168,13 @@ class SourceBinding(BaseModel):
                         f"Identity column '{id_col}' not found in binding columns"
                     )
 
+    def content_hash(self) -> str:
+        """Stable identity of the binding's *behaviour* (excludes timestamps)."""
+        doc = self.to_dict()
+        doc.pop("created_at", None)
+        raw = json.dumps(doc, sort_keys=True, ensure_ascii=False)
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-compatible dictionary."""
         return {
@@ -157,5 +190,9 @@ class SourceBinding(BaseModel):
             "identity_columns": self.identity_columns,
             "description": self.description,
             "tags": self.tags,
+            "delimiter": self.delimiter,
+            "locale": self.locale,
+            "null_tokens": list(self.null_tokens),
+            "max_quarantine_ratio": self.max_quarantine_ratio,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
