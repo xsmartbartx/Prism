@@ -14,15 +14,12 @@ Phase 0 v0:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 from data.query.plan import ExecutionPlan
 from data.query.spec import (
-    AggregationSpec,
     FilterOp,
     FilterSpec,
     QuerySpec,
-    SortSpec,
 )
 
 
@@ -146,9 +143,10 @@ def _validate_filter_operator(f: FilterSpec, errors: list[str]) -> None:
         )
 
     # Type-specific validation
-    if f.operator in (FilterOp.GT, FilterOp.GTE, FilterOp.LT, FilterOp.LTE):
-        if not isinstance(f.value, (int, float)):
-            errors.append(
-                f"Filter operator '{f.operator.value}' requires a numeric value, "
-                f"got {type(f.value).__name__}"
-            )
+    if f.operator in (FilterOp.GT, FilterOp.GTE, FilterOp.LT, FilterOp.LTE) and not isinstance(
+        f.value, (int, float)
+    ):
+        errors.append(
+            f"Filter operator '{f.operator.value}' requires a numeric value, "
+            f"got {type(f.value).__name__}"
+        )

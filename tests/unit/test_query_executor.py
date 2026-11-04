@@ -12,7 +12,6 @@ from data.query.spec import (
     SortSpec,
 )
 
-
 ROWS = [
     {"name": "Alice", "age": 30, "salary": 70000, "department": "Engineering"},
     {"name": "Bob", "age": 25, "salary": 60000, "department": "Engineering"},

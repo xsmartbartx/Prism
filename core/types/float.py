@@ -8,7 +8,6 @@ Locale-aware float parsing handles decimal and thousands separators:
 
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import Any
 
 from core.errors import ParseError
@@ -68,10 +67,10 @@ class FloatType(DataType):
 
         try:
             return float(cleaned)
-        except ValueError:
+        except ValueError as exc:
             raise ParseError(
                 f"Cannot parse '{value}' as float (locale={self._locale})"
-            )
+            ) from exc
 
     def validate(self, value: Any) -> bool:
         return isinstance(value, (float, int)) and not isinstance(value, bool)

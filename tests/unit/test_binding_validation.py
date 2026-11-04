@@ -1,12 +1,12 @@
 """Unit tests for SourceBinding validation, serialization, and edge cases."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
 from core.types import ColumnContract
-from schemas.binding import SourceBinding, RefreshMode, ConnectorType
+from schemas.binding import ConnectorType, RefreshMode, SourceBinding
 
 
 class TestSourceBindingValidation:
@@ -76,7 +76,7 @@ class TestSourceBindingSerialization:
         assert d["columns"][0]["type"] == "integer"
 
     def test_to_dict_with_timestamp(self) -> None:
-        ts = datetime(2026, 9, 8, 12, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2026, 9, 8, 12, 0, 0, tzinfo=UTC)
         b = SourceBinding(
             name="Test",
             connector_type=ConnectorType.CSV,

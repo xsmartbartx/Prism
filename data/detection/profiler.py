@@ -17,7 +17,7 @@ _NUMERIC_PATTERN = re.compile(
     r"|^[-+]?\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?$"
 )
 
-_BOOLEAN_VALUES: frozenset = frozenset({
+_BOOLEAN_VALUES: frozenset[str] = frozenset({
     "true", "false", "yes", "no", "y", "n", "t", "f", "1", "0",
     "TRUE", "FALSE", "YES", "NO",
 })
@@ -48,7 +48,7 @@ def profile_rows(rows: list[list[str]]) -> dict[int, ColumnProfile]:
     """Build profiles for each column from sampled rows."""
     profiles: dict[int, ColumnProfile] = {}
 
-    for row_idx, row in enumerate(rows):
+    for row in rows:
         for col_idx, raw_value in enumerate(row):
             if col_idx not in profiles:
                 profiles[col_idx] = ColumnProfile(index=col_idx)

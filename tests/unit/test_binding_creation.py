@@ -1,13 +1,11 @@
 """Unit tests for SourceBinding creation and basic validation."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 import pytest
 from pydantic import ValidationError as PydanticValidationError
 
 from core.types import ColumnContract, DataRole
-from schemas.binding import SourceBinding, RefreshMode, ConnectorType
+from schemas.binding import ConnectorType, RefreshMode, SourceBinding
 
 
 class TestSourceBindingCreation:

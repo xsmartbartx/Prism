@@ -1,7 +1,7 @@
 """Tests for the sharing module — share tokens, validation, revocation."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from catalog import ArtifactType, AuditAction, ShareManager, ShareToken
 
@@ -22,7 +22,7 @@ class TestShareToken:
         assert t.is_valid() is False
 
     def test_is_valid_expired(self) -> None:
-        past = datetime.utcnow() - timedelta(hours=1)
+        past = datetime.now(UTC) - timedelta(hours=1)
         t = ShareToken(token_id="t1", artifact_id="a1", artifact_type=ArtifactType.CHART, expires_at=past)
         assert t.is_valid() is False
 

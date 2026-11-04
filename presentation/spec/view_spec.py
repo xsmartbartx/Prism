@@ -10,7 +10,6 @@ Phase 0 v0: Bar, line, table; SVG target.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 

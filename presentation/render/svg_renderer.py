@@ -1,7 +1,9 @@
 """SVG Renderer."""
 from __future__ import annotations
+
 import math
 from typing import Any
+
 from presentation.spec.view_spec import EncodingChannel, MarkType, ViewSpec
 
 _COLORS = [
@@ -100,7 +102,6 @@ class SvgRenderer:
         ye = spec.encoding_for(EncodingChannel.Y)
         if not xe or not ye: return self._empty(spec)
         vals = [_to_num(row.get(ye.field, 0)) for row in rows]
-        cats = [str(row.get(xe.field, "")) for row in rows]
         n = len(vals)
         w = max(spec.width, 200)
         h = max(spec.height, 200)
@@ -143,7 +144,7 @@ def _to_num(value: object) -> float:
     if value is None: return 0.0
     if isinstance(value, (int, float)): return float(value)
     try: return float(str(value).replace(",", "").replace("$", ""))
-    except: return 0.0
+    except ValueError: return 0.0
 
 
 def _yrange(vals: list[float]) -> tuple[float, float]:
@@ -162,7 +163,8 @@ def _ticks(ymin: float, ymax: float, n: int = 5) -> list[float]:
     res = raw / max(mag, 1)
     nice = (1 if res <= 1.5 else 2 if res <= 3.5 else 5 if res <= 7.5 else 10) * mag
     start = int(ymin / max(nice, 1)) * nice
-    ticks, cur = [], start
+    ticks: list[float] = []
+    cur: float = start
     while cur <= ymax + nice: ticks.append(cur); cur += nice
     return ticks
 

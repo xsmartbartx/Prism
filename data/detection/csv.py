@@ -14,8 +14,8 @@ import csv
 import io
 
 from core.detection import DetectedStructure, DetectionConfidence, _score_to_enum
+from data.detection.header import detect_data_region, detect_header
 from data.detection.profiler import classify_value, profile_rows
-from data.detection.header import detect_header, detect_data_region
 
 _SAMPLE_SIZE = 100
 
@@ -28,6 +28,7 @@ def _calculate_confidence(
     column_count: int,
 ) -> float:
     """Calculate overall detection confidence."""
+    consistency_bonus = 0.0
     if column_count >= 2:
         consistent_cols = 0
         for row in rows[data_start_row:]:
@@ -49,7 +50,8 @@ def _calculate_confidence(
             for data_row in data_rows_for_compare:
                 if data_row:
                     data_types = [classify_value(c) for c in data_row]
-                    match_count = sum(1 for h, d in zip(header_types, data_types) if h == d)
+                    pairs = zip(header_types, data_types, strict=False)
+                    match_count = sum(1 for h, d in pairs if h == d)
                     data_type_matches.append(match_count / max(len(header_types), 1))
             avg_match = sum(data_type_matches) / max(len(data_type_matches), 1)
             if avg_match > 0.8:
@@ -131,9 +133,15 @@ def detect_structure(
     else:
         column_names = [f"column_{i}" for i in range(column_count)]
 
+    relative_header = (
+        max(header_row_index - first_data_idx, 0) if header_row_index >= 0 else header_row_index
+    )
     overall_confidence = _calculate_confidence(
-        non_blank_rows, max(header_row_index - first_data_idx, 0) if header_row_index >= 0 else header_row_index,
-        header_confidence, data_start_row - first_data_idx, column_count
+        non_blank_rows,
+        relative_header,
+        header_confidence,
+        data_start_row - first_data_idx,
+        column_count,
     )
 
     return DetectedStructure(

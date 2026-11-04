@@ -4,14 +4,14 @@ from __future__ import annotations
 import csv
 import io
 
+from catalog import ArtifactType, CatalogIndex, ShareManager
 from data.detection.csv import detect_structure
 from data.detection.inference import TypeInferenceEngine
-from data.query.spec import AggFunction, AggregationSpec, QuerySpec, SortDir, SortSpec
 from data.query.compiler import QueryCompiler
 from data.query.executor import QueryExecutor
-from presentation.spec.view_spec import Encoding, EncodingChannel, MarkType, ViewSpec
+from data.query.spec import AggFunction, AggregationSpec, QuerySpec
 from presentation.render.svg_renderer import SvgRenderer
-from catalog import CatalogIndex, ArtifactType, ShareManager
+from presentation.spec.view_spec import Encoding, EncodingChannel, MarkType, ViewSpec
 
 
 class TestE2EPipeline:

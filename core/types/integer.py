@@ -52,8 +52,8 @@ class IntegerType(DataType):
 
         try:
             return int(cleaned)
-        except ValueError:
-            raise ParseError(f"Cannot parse '{value}' as integer (locale={self._locale})")
+        except ValueError as exc:
+            raise ParseError(f"Cannot parse '{value}' as integer (locale={self._locale})") from exc
 
     def validate(self, value: Any) -> bool:
         return isinstance(value, int) and not isinstance(value, bool)

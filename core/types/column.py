@@ -87,6 +87,6 @@ class ColumnContract(BaseModel):
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ColumnContract":
+    def from_dict(cls, data: dict[str, Any]) -> ColumnContract:
         """Create a contract from a dictionary (e.g., parsed from YAML/JSON)."""
         return cls(**data)

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from data.detection.profiler import classify_value, profile_rows
+from core.detection import ColumnProfile
+from data.detection.profiler import classify_value
 
 
 def detect_header(
@@ -21,8 +22,8 @@ def detect_header(
     if total_columns == 0:
         return -1, 0.0
 
-    header_like_count = 0
-    data_like_count = 0
+    header_like_count = 0.0
+    data_like_count = 0.0
 
     for col_idx in range(total_columns):
         if col_idx >= len(first_row):
@@ -43,9 +44,7 @@ def detect_header(
                 header_like_count += 0.3
         elif classification == "numeric":
             data_like_count += 1
-        elif classification == "date":
-            data_like_count += 0.5
-        elif classification == "boolean":
+        elif classification == "date" or classification == "boolean":
             data_like_count += 0.5
 
     # Check if first row differs from second row

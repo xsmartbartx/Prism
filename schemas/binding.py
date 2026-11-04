@@ -120,17 +120,14 @@ class SourceBinding(BaseModel):
 
         Raises ValidationError if the binding is invalid.
         """
-        from core.validation import assert_positive_int, assert_non_empty_string
+        from core.errors import ValidationError
+        from core.validation import assert_non_empty_string
 
         assert_non_empty_string(self.name, name="binding.name")
         assert_non_empty_string(self.source, name="binding.source")
 
-        if self.refresh_mode == RefreshMode.UPSERT:
-            if not self.identity_columns:
-                from core.errors import ValidationError
-                raise ValidationError(
-                    "identity_columns are required when refresh_mode is 'upsert'"
-                )
+        if self.refresh_mode == RefreshMode.UPSERT and not self.identity_columns:
+            raise ValidationError("identity_columns are required when refresh_mode is 'upsert'")
 
         # Validate each column contract
         for col in self.columns:
@@ -141,7 +138,6 @@ class SourceBinding(BaseModel):
             col_names = {c.name for c in self.columns}
             for id_col in self.identity_columns:
                 if id_col not in col_names:
-                    from core.errors import ValidationError
                     raise ValidationError(
                         f"Identity column '{id_col}' not found in binding columns"
                     )

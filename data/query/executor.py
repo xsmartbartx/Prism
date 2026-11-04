@@ -113,7 +113,7 @@ def _aggregate(
     if not rows:
         return []
 
-    groups: dict[tuple, list[dict[str, Any]]] = defaultdict(list)
+    groups: dict[tuple[Any, ...], list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         key = tuple(row.get(col) for col in group_by_columns)
         groups[key].append(row)
@@ -141,11 +141,25 @@ def _sort_rows(
     rows: list[dict[str, Any]],
     sort_specs: list[SortSpec],
 ) -> list[dict[str, Any]]:
-    """Sort rows by the specified columns and directions."""
+    """Sort rows by the specified columns and directions.
+
+    Uses successive stable sorts (last key first) so mixed ASC/DESC
+    composite sorts are exact. ``None`` always sorts last, regardless
+    of direction.
+    """
     if not sort_specs:
         return rows
 
-    return sorted(rows, key=lambda r: _make_sort_key(r, sort_specs))
+    result = list(rows)
+    for spec in reversed(sort_specs):
+        present = [r for r in result if r.get(spec.column) is not None]
+        missing = [r for r in result if r.get(spec.column) is None]
+        present.sort(
+            key=lambda r, c=spec.column: _sort_value(r.get(c)),  # type: ignore[misc]
+            reverse=spec.direction == SortDir.DESC,
+        )
+        result = present + missing
+    return result
 
 
 # ------------------------------------------------------------------
@@ -160,17 +174,17 @@ def _matches_filter(
 ) -> bool:
     """Check if a value matches a filter predicate."""
     if operator == FilterOp.EQ:
-        return value == target
+        return bool(value == target)
     elif operator == FilterOp.NE:
-        return value != target
+        return bool(value != target)
     elif operator == FilterOp.GT:
-        return value is not None and target is not None and value > target
+        return value is not None and target is not None and bool(value > target)
     elif operator == FilterOp.GTE:
-        return value is not None and target is not None and value >= target
+        return value is not None and target is not None and bool(value >= target)
     elif operator == FilterOp.LT:
-        return value is not None and target is not None and value < target
+        return value is not None and target is not None and bool(value < target)
     elif operator == FilterOp.LTE:
-        return value is not None and target is not None and value <= target
+        return value is not None and target is not None and bool(value <= target)
     return True
 
 
@@ -197,32 +211,12 @@ def _apply_aggregation(
     return None
 
 
-def _make_sort_key(
-    row: dict[str, Any],
-    sort_specs: list[SortSpec],
-) -> tuple:
-    """Build a composite sort key from multiple sort specs.
-
-    Handles:
-    - Mixed ASC/DESC in composite sorts
-    - None values sorted last regardless of direction
-    - Strings reverse-ordered by negating character ordinals for DESC
-    """
-    keys: list[Any] = []
-    for s in sort_specs:
-        val = row.get(s.column)
-        if s.direction == SortDir.DESC:
-            if val is None:
-                keys.append((2,))  # None always last
-            elif isinstance(val, (int, float)):
-                keys.append((-val,))
-            else:
-                # Strings: reverse by negating character ordinals
-                keys.append(tuple(-ord(c) for c in str(val)))
-        else:
-            # ASC
-            if val is None:
-                keys.append((1,))  # None goes last in ASC too
-            else:
-                keys.append((0, val) if isinstance(val, (int, float)) else (0,) + tuple(ord(c) for c in str(val)))
-    return tuple(keys)
+def _sort_value(value: Any) -> tuple[int, Any]:
+    """Map a value onto a totally ordered key, ranking mixed types stably."""
+    if isinstance(value, bool):
+        return (0, int(value))
+    if isinstance(value, (int, float)):
+        return (1, value)
+    if isinstance(value, str):
+        return (3, value)
+    return (2, value)

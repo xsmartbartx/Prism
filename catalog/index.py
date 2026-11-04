@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from datetime import datetime
 
-from catalog.models import ArtifactType, CatalogEntry, AuditEvent, AuditAction
+from catalog.models import ArtifactType, AuditAction, AuditEvent, CatalogEntry
+from core.clock import utcnow
 
 
 def _gid(name: str, t: ArtifactType) -> str:
-    raw = f"{t.value}:{name}:{datetime.utcnow().isoformat()}"
+    raw = f"{t.value}:{name}:{utcnow().isoformat()}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
@@ -28,7 +28,7 @@ class CatalogIndex:
                  row_count: int = 0, source: str | None = None,
                  actor: str | None = None) -> CatalogEntry:
         entry_id = _gid(name, artifact_type)
-        now = datetime.utcnow()
+        now = utcnow()
         cols = columns or []
         entry = CatalogEntry(id=entry_id, name=name, artifact_type=artifact_type,
             description=description, tags=tags or [], owner=owner,
@@ -45,7 +45,7 @@ class CatalogIndex:
                actor: str | None = None) -> CatalogEntry | None:
         entry = self._entries.get(entry_id)
         if not entry: return None
-        now = datetime.utcnow()
+        now = utcnow()
         updated = CatalogEntry(id=entry.id, name=name or entry.name,
             artifact_type=entry.artifact_type,
             description=description if description is not None else entry.description,
@@ -83,8 +83,8 @@ class CatalogIndex:
                 if not (in_name or in_desc or in_tags or in_cols):
                     continue
             if tags:
-                et = set(t.lower() for t in entry.tags)
-                if not set(t.lower() for t in tags).issubset(et):
+                et = {t.lower() for t in entry.tags}
+                if not {t.lower() for t in tags}.issubset(et):
                     continue
             results.append(entry)
         results.sort(key=lambda e: e.name.lower())
@@ -106,5 +106,9 @@ class CatalogIndex:
         return e
 
     def get_audit_log(self, limit: int = 100, target_id: str | None = None) -> list[AuditEvent]:
-        events = [e for e in self._audit_log if e.target_id == target_id] if target_id else self._audit_log
+        events = (
+            [e for e in self._audit_log if e.target_id == target_id]
+            if target_id
+            else self._audit_log
+        )
         return events[-limit:][::-1]

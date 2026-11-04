@@ -5,11 +5,13 @@ from __future__ import annotations
 import hashlib
 import hmac
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Callable
+from typing import Any
 
 from catalog.models import ArtifactType, AuditAction
+from core.clock import utcnow
 
 _SECRET_KEY = b"prism-share-key-v0-dev"
 
@@ -22,7 +24,7 @@ class ShareToken:
     artifact_id: str
     artifact_type: ArtifactType
     created_by: str | None = field(default=None)
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=utcnow)
     expires_at: datetime | None = field(default=None)
     is_revoked: bool = field(default=False)
     max_uses: int | None = field(default=None)
@@ -30,11 +32,12 @@ class ShareToken:
     signature: str = field(default="")
 
     def is_valid(self, now: datetime | None = None) -> bool:
-        t = now or datetime.utcnow()
-        if self.is_revoked: return False
-        if self.expires_at and t > self.expires_at: return False
-        if self.max_uses is not None and self.use_count >= self.max_uses: return False
-        return True
+        t = now or utcnow()
+        if self.is_revoked:
+            return False
+        if self.expires_at and t > self.expires_at:
+            return False
+        return not (self.max_uses is not None and self.use_count >= self.max_uses)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -59,7 +62,7 @@ def _verify(payload: str, sig: str, secret: bytes = _SECRET_KEY) -> bool:
 class ShareManager:
     """Manages share tokens — create, validate, revoke."""
 
-    def __init__(self, audit_callback: Callable | None = None) -> None:
+    def __init__(self, audit_callback: Callable[..., Any] | None = None) -> None:
         self._tokens: dict[str, ShareToken] = {}
         self._audit = audit_callback
 
@@ -75,7 +78,7 @@ class ShareManager:
         if not artifact_id:
             raise ValueError("artifact_id is required")
         token_id = uuid.uuid4().hex[:16]
-        now = datetime.utcnow()
+        now = utcnow()
         expires_at = now + timedelta(hours=expires_in_hours) if expires_in_hours else None
         payload = f"{token_id}:{artifact_id}:{artifact_type.value}:{now.isoformat()}"
         sig = _sign(payload)
@@ -91,7 +94,10 @@ class ShareManager:
         token = self._tokens.get(token_id)
         if not token: return None
         if signature:
-            payload = f"{token.token_id}:{token.artifact_id}:{token.artifact_type.value}:{token.created_at.isoformat()}"
+            payload = (
+                f"{token.token_id}:{token.artifact_id}:"
+                f"{token.artifact_type.value}:{token.created_at.isoformat()}"
+            )
             if not _verify(payload, signature): return None
         return token if token.is_valid(now) else None
 

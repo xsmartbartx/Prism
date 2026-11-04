@@ -77,7 +77,7 @@ class DateType(DataType):
         # Try each format
         for fmt in self._preferred_formats:
             try:
-                dt = datetime.strptime(cleaned, fmt)
+                dt = datetime.strptime(cleaned, fmt)  # noqa: DTZ007 - date-only value
                 return dt.date()
             except ValueError:
                 continue

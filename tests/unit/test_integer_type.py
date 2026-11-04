@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pytest
+
 from core.errors import ParseError
 from core.types import IntegerType
 
