@@ -51,3 +51,6 @@ server/static/
 # Local runtime data
 var/
 var-dev/
+
+# Deployment secrets
+deploy/.env

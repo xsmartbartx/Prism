@@ -90,6 +90,15 @@ def create_app(settings: Settings | None = None, *, db: Database | None = None) 
         upgrade(svc.db)
         with svc.db.transaction() as s:
             svc.auth.purge_expired(s)
+        if (
+            settings.env == "production"
+            and settings.base_url.startswith("http://")
+            and not any(h in settings.base_url for h in ("localhost", "127.0.0.1"))
+        ):
+            log.warning(
+                "PRISM_BASE_URL is plain http; sessions are not protected by TLS. "
+                "Put Prism behind HTTPS (see deploy/compose.yml) and set an https:// base URL."
+            )
         log.info("Prism %s ready on %s", __version__, settings.base_url)
         yield
         svc.db.dispose()
@@ -233,7 +242,7 @@ def create_app(settings: Settings | None = None, *, db: Database | None = None) 
     if static is not None:
         index = static / "index.html"
 
-        @app.get("/{path:path}", include_in_schema=False)
+        @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)
         async def spa(path: str) -> Response:
             if path.startswith(("api/", "s/", "embed/")):
                 return _error(404, "NotFound", "Not found")

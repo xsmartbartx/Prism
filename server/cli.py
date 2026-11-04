@@ -97,6 +97,36 @@ def cmd_reset_password(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_backup(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from server.backup import create_backup, prune_backups
+    from server.db import Database
+
+    settings = _settings()
+    db = Database(settings.resolved_database_url)
+    out = Path(args.out) if args.out else settings.backups_dir
+    path = create_backup(settings, db, include_uploads=args.include_uploads, out_dir=out)
+    print(f"Backup written: {path} ({path.stat().st_size / 1024 / 1024:.1f} MB)")
+    if args.keep:
+        for p in prune_backups(out, args.keep):
+            print(f"Pruned {p.name}")
+    return 0
+
+
+def cmd_restore(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from server.backup import restore_backup
+    from server.db import Database
+
+    settings = _settings()
+    db = Database(settings.resolved_database_url)
+    manifest = restore_backup(settings, db, Path(args.archive), force=args.force)
+    print(f"Restored backup from {manifest['created_at']} (Prism {manifest['version']})")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="prism", description="Prism self-hosted data platform")
     p.add_argument("--version", action="version", version=f"prism {__version__}")
@@ -128,6 +158,16 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--email", required=True)
     r.add_argument("--password", help="Prompted when omitted")
     r.set_defaults(func=cmd_reset_password)
+    b = sub.add_parser("backup", help="Write a backup archive of metadata and datasets")
+    b.add_argument("--out", help="Directory for the archive (default: <data_dir>/backups)")
+    b.add_argument("--include-uploads", action="store_true", help="Also archive original files")
+    b.add_argument("--keep", type=int, default=0, help="Keep only the newest N archives")
+    b.set_defaults(func=cmd_backup)
+
+    rs = sub.add_parser("restore", help="Restore a backup archive into this instance")
+    rs.add_argument("archive")
+    rs.add_argument("--force", action="store_true", help="Replace existing data")
+    rs.set_defaults(func=cmd_restore)
     return p
 
 
@@ -137,7 +177,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return int(args.func(args))
-    except PrismError as exc:
+    except (PrismError, RuntimeError, ValueError, FileNotFoundError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

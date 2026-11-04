@@ -1,0 +1,17 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$PRISM_DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 2GB
+	}
+	reverse_proxy prism:8080 {
+		header_up X-Forwarded-Proto {scheme}
+	}
+	log {
+		output stdout
+		format json
+	}
+}
