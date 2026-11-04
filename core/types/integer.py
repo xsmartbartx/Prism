@@ -11,6 +11,7 @@ from typing import Any
 
 from core.errors import ParseError
 from core.types.base import DataType
+from core.types.numeric import normalize_number
 
 
 class IntegerType(DataType):
@@ -30,30 +31,13 @@ class IntegerType(DataType):
     def parse(self, value: str) -> int:
         if not isinstance(value, str):
             raise ParseError(f"Cannot parse non-string value: {value!r}")
-
         cleaned = value.strip()
         if not cleaned:
             raise ParseError("Cannot parse empty string as integer")
-
-        # Determine the thousands separator based on locale
-        if self._locale.startswith("de") or self._locale.startswith("fr"):
-            # de_DE, fr_FR: 1.234.567,89
-            sep = "."
-        elif self._locale.startswith("en"):
-            # en_US: 1,234,567
-            sep = ","
-        else:
-            sep = ","  # default
-
-        # Remove thousands separators
-        if sep in cleaned:
-            # Remove all occurrences of the separator
-            cleaned = cleaned.replace(sep, "")
-
-        try:
-            return int(cleaned)
-        except ValueError:
+        normalized = normalize_number(cleaned, self._locale, allow_fraction=False)
+        if normalized is None:
             raise ParseError(f"Cannot parse '{value}' as integer (locale={self._locale})")
+        return int(normalized)
 
     def validate(self, value: Any) -> bool:
         return isinstance(value, int) and not isinstance(value, bool)

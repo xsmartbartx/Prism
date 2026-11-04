@@ -12,7 +12,7 @@ from typing import Any
 from core.errors import ParseError
 from core.types.base import DataType
 
-# Common date format patterns
+# Common date format patterns (month-first ordering, used by US locales)
 DATE_FORMATS: list[str] = [
     "%Y-%m-%d",       # 2026-09-08 (ISO 8601)
     "%Y/%m/%d",       # 2026/09/08
@@ -20,10 +20,32 @@ DATE_FORMATS: list[str] = [
     "%d/%m/%Y",       # 08/09/2026 (EU)
     "%m-%d-%Y",       # 09-08-2026
     "%d-%m-%Y",       # 08-09-2026
+    "%d.%m.%Y",       # 08.09.2026 (DE/PL/RU)
     "%B %d, %Y",      # September 8, 2026
     "%b %d, %Y",      # Sep 8, 2026
     "%d %B %Y",       # 8 September 2026
+    "%d %b %Y",       # 8 Sep 2026
     "%Y%m%d",         # 20260908
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%d %H:%M",
+]
+
+# Locales that write the month before the day.
+MONTH_FIRST_LOCALES = frozenset({"en_US", "en_PH", "en_CA"})
+
+_DAY_FIRST_FORMATS: list[str] = [
+    "%Y-%m-%d",
+    "%d/%m/%Y",
+    "%d.%m.%Y",
+    "%d-%m-%Y",
+    "%Y/%m/%d",
+    "%m/%d/%Y",
+    "%m-%d-%Y",
+] + [f for f in DATE_FORMATS if "/" not in f and "-" not in f[:6] and "." not in f] + [
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%d %H:%M",
 ]
 
 
@@ -32,19 +54,11 @@ class DateType(DataType):
 
     def __init__(self, locale: str = "en_US") -> None:
         self._locale = locale
-        # For locale-aware format preferences
-        if locale.startswith("en"):
+        # Month-first only where that is the convention; everyone else day-first.
+        if locale in MONTH_FIRST_LOCALES or locale == "en":
             self._preferred_formats = DATE_FORMATS
         else:
-            # EU locales prefer dd/mm/yyyy before mm/dd/yyyy
-            self._preferred_formats = [
-                "%d/%m/%Y",
-                "%d-%m-%Y",
-                "%Y-%m-%d",
-                "%Y/%m/%d",
-                "%m/%d/%Y",
-                "%m-%d-%Y",
-            ] + [f for f in DATE_FORMATS if "/" not in f and "-" not in f]
+            self._preferred_formats = list(dict.fromkeys(_DAY_FIRST_FORMATS))
 
     @property
     def name(self) -> str:
@@ -77,7 +91,7 @@ class DateType(DataType):
         # Try each format
         for fmt in self._preferred_formats:
             try:
-                dt = datetime.strptime(cleaned, fmt)
+                dt = datetime.strptime(cleaned, fmt)  # noqa: DTZ007 - date-only value
                 return dt.date()
             except ValueError:
                 continue

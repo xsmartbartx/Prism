@@ -1,0 +1,10 @@
+# Overlay for building the image from this source checkout:
+#   docker compose -f compose.yml -f compose.build.yml up -d --build
+services:
+  prism:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: prism:local
+  backup:
+    image: prism:local

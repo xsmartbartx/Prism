@@ -1,7 +1,7 @@
 """Tests for the SVG Renderer."""
 from __future__ import annotations
 
-from presentation.render.svg_renderer import SvgRenderer, _to_num, _yrange, _ticks
+from presentation.render.svg_renderer import SvgRenderer, _ticks, _to_num, _yrange
 from presentation.spec.view_spec import (
     Encoding,
     EncodingChannel,

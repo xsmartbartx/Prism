@@ -1,0 +1,23 @@
+# Try Prism locally without a domain or TLS:
+#   docker compose -f deploy/compose.local.yml up --build
+# then open http://localhost:8080
+name: prism-local
+services:
+  prism:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: prism:latest
+    environment:
+      PRISM_BASE_URL: http://localhost:8080
+    ports:
+      - "8080:8080"
+    volumes:
+      - prism_local:/var/lib/prism
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+volumes:
+  prism_local:

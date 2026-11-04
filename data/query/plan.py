@@ -58,6 +58,15 @@ class ExecutionPlan:
     offset: int = field(default=0)
     """Rows to skip before returning."""
 
+    time_grains: tuple[tuple[str, str], ...] = field(default=())
+    """(dimension, grain) pairs — date dimensions bucketed by calendar grain."""
+
+    column_types: tuple[tuple[str, str], ...] = field(default=())
+    """(column, prism type) for every referenced column, when known."""
+
+    raw: bool = field(default=False)
+    """True for a row projection (no grouping, no aggregation)."""
+
     plan_hash: str = field(init=False)
     """Stable content address for caching and audit."""
 
@@ -67,7 +76,7 @@ class ExecutionPlan:
             "select_columns": list(self.select_columns),
             "group_by_columns": list(self.group_by_columns),
             "aggregations": [
-                {"column": a.column, "function": a.function.value}
+                {"column": a.column, "function": a.function.value, "alias": a.alias}
                 for a in self.aggregations
             ],
             "filters": [
@@ -84,6 +93,9 @@ class ExecutionPlan:
             ],
             "limit": self.limit,
             "offset": self.offset,
+            "time_grains": [list(t) for t in self.time_grains],
+            "column_types": [list(t) for t in self.column_types],
+            "raw": self.raw,
         }
         # Use object.__setattr__ because frozen=True
         object.__setattr__(self, "plan_hash", _stable_hash(plan_dict))
@@ -111,6 +123,10 @@ class ResultSet:
     @property
     def column_count(self) -> int:
         return len(self.columns)
+
+    @property
+    def truncated(self) -> bool:
+        return self.row_count > len(self.rows)
 
     def to_dicts(self) -> list[dict[str, Any]]:
         """Convert rows to a list of dicts (for JSON serialization)."""

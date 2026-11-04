@@ -1,116 +1,94 @@
 # Prism
 
-**Self-hosted data platform — import, model, query, and visualize data declaratively.**
+**Self-hosted data platform — drop a spreadsheet, get a trustworthy chart, share a link.**
 
-Prism replaces the spreadsheet-and-shared-drive reporting estate with a deterministic, auditable, AI-friendly data platform. **Drop a file, get a chart, share a link** — with complete lineage, drift detection, and zero-trust security.
+Prism turns Excel and CSV files into typed, versioned datasets, lets people build charts and dashboards without SQL, and shares them with a link — on your own server, with an audit trail for every number.
 
-## Core Thesis
+- **Imports that don't lie.** Prism detects header rows, number/date formats and column types, then asks you to confirm what it can't be sure of. Rows that don't fit go to a quarantine you can inspect — nothing is silently coerced.
+- **Refreshes that fail loudly.** Load next month's file and Prism checks it against the dataset's column contract. A renamed or missing column stops the load with a clear message instead of producing a wrong number.
+- **Charts as specifications.** Bar, line, area, donut, scatter, KPI and table charts render server-side to accessible SVG — the same output on screen, in exports and on share pages.
+- **Share safely.** Public links are read-only, expiring, revocable and counted; embeds are opt-in.
+- **Audit everything.** Every import, publish, share and export is recorded in a tamper-evident, hash-chained log.
+- **Runs anywhere.** One container, SQLite or PostgreSQL, automatic HTTPS, daily backups. No data leaves your server — license keys verify offline.
 
-- **An import is a compiled contract, not a copy.** A binding is reviewable, diffable, replayable, and a source that changes shape breaks it loudly.
-- **A chart is a specification, not a picture.** One declarative grammar drives screen, export, and embed identically.
-- **The AI proposes, the engine disposes.** Every agent output crosses the same validation path as untrusted user input.
-
-## Status
-
-**Phase 0 — Walking Skeleton (❄️ Complete)** · **241 tests passing** · **93% coverage**
-
-| Deliverable | Status | Description |
-|---|---|---|
-| Type System v0 | ✅ | Integer, Float, String, Date, Boolean — locale-aware parsing/formatting |
-| Binding Schema v0 | ✅ | ColumnContract, SourceBinding, validation, serialization |
-| Structure Detector v0 | ✅ | CSV header detection, data region detection, confidence scoring |
-| Type Inference v0 | ✅ | Ranked candidates, ambiguity detection → blocks publication |
-| Query Compiler & Executor v0 | ✅ | QuerySpec → ExecutionPlan → ResultSet (filter/group/aggregate/sort) |
-| View Spec v0 | ✅ | Declarative mark/encoding/scales grammar (bar, line, table) |
-| SVG Renderer v0 | ✅ | Deterministic SVG output for bar, line, and table charts |
-| Catalog & Audit Log | ✅ | Searchable index + append-only event record |
-| Sharing v0 | ✅ | Signed, revocable, expiring share tokens |
-| End-to-End Pipeline | ✅ | CSV → detect → infer → query → render → share |
-| Container Deployment | ✅ | Dockerfile + docker-compose for single-node hosting |
-
-### Phase 0 Exit Criterion (met)
-
-> A non-technical user can drop a CSV file, confirm inference decisions, build a correct chart, and share it — with every step traceable through the audit log.
-
-## Quick Start
+## Quick start (local trial)
 
 ```bash
-# Create virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install with dev dependencies
-pip install -e ".[dev]"
-
-# Run the full test suite (241 tests)
-pytest
-
-# Run with coverage
-pytest --cov=core --cov=data --cov=presentation --cov=catalog --cov-report=term-missing
+docker compose -f deploy/compose.local.yml up --build
 ```
 
-## End-to-End Example
+Open <http://localhost:8080>, create the owner account, and click **Load a sample sales dataset**.
 
-```python
-from data.detection.csv import detect_structure
-from data.detection.inference import TypeInferenceEngine
-from data.query.spec import QuerySpec, AggregationSpec, AggFunction
-from data.query.compiler import QueryCompiler
-from data.query.executor import QueryExecutor
-from presentation.spec.view_spec import ViewSpec, MarkType, EncodingChannel, Encoding
-from presentation.render.svg_renderer import SvgRenderer
-from catalog import CatalogIndex, ArtifactType, ShareManager
-
-# 1. Detect structure
-structure = detect_structure("dept,name,salary\nEng,Alice,70000\nMkt,Bob,60000")
-
-# 2. Infer types
-inference = TypeInferenceEngine().infer_dataset(column_data)
-
-# 3. Query — sum salary by department
-spec = QuerySpec(dimensions=["dept"],
-    measures=[AggregationSpec(column="salary", function=AggFunction.SUM)])
-plan = QueryCompiler(dataset_columns=set(column_data.keys())).compile(spec).plan
-result = QueryExecutor().execute(plan, rows)
-
-# 4. Render as SVG
-svg = SvgRenderer().render(ViewSpec(mark=MarkType.BAR, encodings=[
-    Encoding(channel=EncodingChannel.X, field="dept"),
-    Encoding(channel=EncodingChannel.Y, field="salary"),
-]), list(result.rows))
-
-# 5. Catalog + Share
-catalog = CatalogIndex()
-chart = catalog.register("Salary Chart", ArtifactType.CHART)
-token = ShareManager().create_share(chart.id, ArtifactType.CHART, expires_in_hours=24)
-```
-
-## Container Deployment
+## Production
 
 ```bash
 cd deploy
-docker compose up -d --build
+cp env.example .env        # set PRISM_DOMAIN, ACME_EMAIL, PRISM_SECRET_KEY
+docker compose up -d
 ```
 
-See `deploy/Dockerfile` and `deploy/compose.yml`.
+Caddy obtains a Let's Encrypt certificate for `PRISM_DOMAIN`; backups run daily into the data volume. Full guide: [docs/install.md](docs/install.md).
 
-## Repository Structure
+## Plans
+
+| | Community | Pro | Business |
+|---|---|---|---|
+| Users | 5 | 25 (or as licensed) | Unlimited |
+| Workspaces | 1 | 3 | Unlimited |
+| Datasets / dashboards | 10 / 5 | Unlimited | Unlimited |
+| Upload size | 25 MB | 500 MB | 2 GB |
+| Embedding, API keys, no Prism branding | — | ✓ | ✓ |
+| Priority support | — | — | ✓ |
+
+Community is free. Pro and Business are unlocked with an offline-verified license key (Settings → License or `PRISM_LICENSE_KEY`). See [docs/admin-guide.md](docs/admin-guide.md#license).
+
+## Documentation
+
+| Guide | For |
+|---|---|
+| [Install & operate](docs/install.md) | Deployment, HTTPS, PostgreSQL, backups, upgrades |
+| [User guide](docs/user-guide.md) | Importing, reviewing, charts, dashboards, sharing |
+| [Admin guide](docs/admin-guide.md) | Members, roles, license, audit log |
+| [API](docs/api.md) | REST API with API keys (`/api/docs` on your instance) |
+| [Security](docs/security.md) | Security model and responsible disclosure |
+| [Selling Prism](docs/selling.md) | Vendor operations: pricing, issuing license keys, support |
+| [Architecture](docs/prism-architecture-and-vision.md) | Design and roadmap |
+
+## Development
+
+Requirements: Python 3.11+, Node 22+.
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+(cd web && npm ci && npm run build)    # UI served by the API at /
+PRISM_DATA_DIR=./var-dev prism serve   # http://localhost:8080
+```
+
+For UI work with hot reload run `npm run dev` in `web/` (proxies the API on :8080) and open <http://localhost:5173>.
+
+```bash
+pytest                      # 400+ tests
+ruff check . && mypy core data presentation catalog schemas server tools
+(cd web && npm run typecheck)
+```
+
+### Repository layout
 
 ```
-core/          Type system, validation, errors, detection primitives
-data/          Ingestion (detection, inference) + query (spec, compiler, executor)
-presentation/  View spec schema + SVG renderer
-catalog/       Searchable index, audit log, share tokens
-schemas/       Declarative document contracts (source bindings)
-deploy/        Dockerfile, compose file
-tests/         241 unit + integration tests
-docs/          Architecture (prism-architecture-and-vision.md) + ADR-0003
+core/          Type system, strict locale-aware parsing, errors, clock
+data/          Connectors (CSV, XLSX), detection & proposals, load runner,
+               Parquet dataset store, profiler, query compiler + DuckDB engine
+presentation/  View spec, SVG renderer, recommendations, CSV/XLSX export
+server/        FastAPI app, services (auth, imports, artifacts, licensing),
+               metadata DB + Alembic migrations, backup/restore, CLI
+web/           React + TypeScript web UI
+deploy/        Dockerfile, compose (Caddy TLS, backups, PostgreSQL)
+site/          Marketing landing page (static)
+tools/         Vendor-only tooling (license issuing) — not shipped
+tests/         Unit, integration and API tests
 ```
-
-## Architecture
-
-See `docs/prism-architecture-and-vision.md` for the full architecture document and `docs/ADR-0003-dataset-and-visualization-model.md` for the dataset and visualization model.
 
 ## License
 
-Proprietary. See `LICENSE`.
+Commercial software. See [LICENSE](LICENSE).

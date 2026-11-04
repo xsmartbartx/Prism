@@ -65,6 +65,17 @@ class ColumnContract(BaseModel):
         description="Optional human-readable description of what this column represents.",
     )
 
+    source_name: str | None = Field(
+        default=None,
+        description="Header text in the source this column is read from (defaults to name).",
+    )
+
+    source_index: int | None = Field(
+        default=None,
+        ge=0,
+        description="0-based source position; used only when the source has no header row.",
+    )
+
     def validate_contract(self) -> None:
         """Validate that the contract is internally consistent.
 
@@ -84,9 +95,11 @@ class ColumnContract(BaseModel):
             "nullable": self.nullable,
             "drift_policy": self.drift_policy.value,
             "description": self.description,
+            "source_name": self.source_name,
+            "source_index": self.source_index,
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "ColumnContract":
+    def from_dict(cls, data: dict[str, Any]) -> ColumnContract:
         """Create a contract from a dictionary (e.g., parsed from YAML/JSON)."""
         return cls(**data)

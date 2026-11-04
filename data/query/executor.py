@@ -12,8 +12,10 @@ the plan or escalate a budget.
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import date, timedelta
 from typing import Any
 
+from data.query.compiler import coerce_filter_value
 from data.query.plan import ExecutionPlan, ResultSet
 from data.query.spec import AggFunction, AggregationSpec, FilterOp, FilterSpec, SortDir, SortSpec
 
@@ -40,10 +42,16 @@ class QueryExecutor:
             A ResultSet with the query results.
         """
         # 1. Filter
-        filtered = _filter_rows(rows, list(plan.filters))
+        types = dict(plan.column_types)
+        filtered = _filter_rows(rows, list(plan.filters), types)
+        if plan.time_grains:
+            grains = dict(plan.time_grains)
+            filtered = [
+                {**r, **{d: _bucket(r.get(d), g) for d, g in grains.items()}} for r in filtered
+            ]
 
         # 2. Group + Aggregate (or just project if no grouping)
-        if plan.group_by_columns:
+        if plan.group_by_columns or plan.aggregations:
             aggregated = _aggregate(
                 filtered,
                 list(plan.group_by_columns),
@@ -86,22 +94,43 @@ class QueryExecutor:
 def _filter_rows(
     rows: list[dict[str, Any]],
     filters: list[FilterSpec],
+    types: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Apply filter predicates to rows."""
     if not filters:
         return rows
+    types = types or {}
+    prepared: list[tuple[str, FilterOp, Any]] = []
+    for f in filters:
+        t = types.get(f.column)
+        if isinstance(f.value, list):
+            target: Any = [coerce_filter_value(v, t) for v in f.value]
+        elif f.operator in (FilterOp.CONTAINS, FilterOp.STARTS_WITH):
+            target = f.value
+        else:
+            target = coerce_filter_value(f.value, t) if t else f.value
+        prepared.append((f.column, f.operator, target))
 
     result: list[dict[str, Any]] = []
     for row in rows:
-        include = True
-        for f in filters:
-            value = row.get(f.column)
-            if not _matches_filter(value, f.operator, f.value):
-                include = False
-                break
-        if include:
+        if all(_matches_filter(row.get(c), op, target) for c, op, target in prepared):
             result.append(row)
     return result
+
+
+def _bucket(value: Any, grain: str) -> Any:
+    """Truncate a date to the start of its calendar bucket."""
+    if not isinstance(value, date):
+        return value
+    if grain == "year":
+        return value.replace(month=1, day=1)
+    if grain == "quarter":
+        return value.replace(month=((value.month - 1) // 3) * 3 + 1, day=1)
+    if grain == "month":
+        return value.replace(day=1)
+    if grain == "week":
+        return value - timedelta(days=value.weekday())
+    return value
 
 
 def _aggregate(
@@ -110,10 +139,12 @@ def _aggregate(
     aggregations: list[AggregationSpec],
 ) -> list[dict[str, Any]]:
     """Group rows and apply aggregation functions."""
-    if not rows:
+    if not rows and group_by_columns:
         return []
 
-    groups: dict[tuple, list[dict[str, Any]]] = defaultdict(list)
+    groups: dict[tuple[Any, ...], list[dict[str, Any]]] = defaultdict(list)
+    if not rows:
+        groups[()] = []
     for row in rows:
         key = tuple(row.get(col) for col in group_by_columns)
         groups[key].append(row)
@@ -125,12 +156,15 @@ def _aggregate(
             result_row[col] = key[i]
 
         for agg in aggregations:
+            if agg.column == "*":
+                result_row[agg.output_name] = len(group_rows)
+                continue
             values = [
                 row.get(agg.column)
                 for row in group_rows
                 if row.get(agg.column) is not None
             ]
-            result_row[agg.column] = _apply_aggregation(values, agg.function)
+            result_row[agg.output_name] = _apply_aggregation(values, agg.function)
 
         result.append(result_row)
 
@@ -141,11 +175,25 @@ def _sort_rows(
     rows: list[dict[str, Any]],
     sort_specs: list[SortSpec],
 ) -> list[dict[str, Any]]:
-    """Sort rows by the specified columns and directions."""
+    """Sort rows by the specified columns and directions.
+
+    Uses successive stable sorts (last key first) so mixed ASC/DESC
+    composite sorts are exact. ``None`` always sorts last, regardless
+    of direction.
+    """
     if not sort_specs:
         return rows
 
-    return sorted(rows, key=lambda r: _make_sort_key(r, sort_specs))
+    result = list(rows)
+    for spec in reversed(sort_specs):
+        present = [r for r in result if r.get(spec.column) is not None]
+        missing = [r for r in result if r.get(spec.column) is None]
+        present.sort(
+            key=lambda r, c=spec.column: _sort_value(r.get(c)),  # type: ignore[misc]
+            reverse=spec.direction == SortDir.DESC,
+        )
+        result = present + missing
+    return result
 
 
 # ------------------------------------------------------------------
@@ -159,18 +207,32 @@ def _matches_filter(
     target: Any,
 ) -> bool:
     """Check if a value matches a filter predicate."""
+    if operator == FilterOp.IS_NULL:
+        return value is None
+    if operator == FilterOp.NOT_NULL:
+        return value is not None
+    if operator == FilterOp.IN:
+        return value in target
+    if operator == FilterOp.NOT_IN:
+        return value is not None and value not in target
+    if operator == FilterOp.CONTAINS:
+        return isinstance(value, str) and str(target).lower() in value.lower()
+    if operator == FilterOp.STARTS_WITH:
+        return isinstance(value, str) and value.lower().startswith(str(target).lower())
+    if operator == FilterOp.BETWEEN:
+        return value is not None and bool(target[0] <= value <= target[1])
     if operator == FilterOp.EQ:
-        return value == target
+        return bool(value == target)
     elif operator == FilterOp.NE:
-        return value != target
+        return bool(value != target)
     elif operator == FilterOp.GT:
-        return value is not None and target is not None and value > target
+        return value is not None and target is not None and bool(value > target)
     elif operator == FilterOp.GTE:
-        return value is not None and target is not None and value >= target
+        return value is not None and target is not None and bool(value >= target)
     elif operator == FilterOp.LT:
-        return value is not None and target is not None and value < target
+        return value is not None and target is not None and bool(value < target)
     elif operator == FilterOp.LTE:
-        return value is not None and target is not None and value <= target
+        return value is not None and target is not None and bool(value <= target)
     return True
 
 
@@ -184,6 +246,16 @@ def _apply_aggregation(
 
     if function == AggFunction.COUNT:
         return len(values)
+    if function == AggFunction.COUNT_DISTINCT:
+        return len(set(values))
+    if function == AggFunction.MEDIAN:
+        numeric = sorted(v for v in values if isinstance(v, (int, float)))
+        if not numeric:
+            return None
+        mid = len(numeric) // 2
+        if len(numeric) % 2:
+            return numeric[mid]
+        return (numeric[mid - 1] + numeric[mid]) / 2
     elif function == AggFunction.SUM:
         numeric = [v for v in values if isinstance(v, (int, float))]
         return sum(numeric) if numeric else None
@@ -197,32 +269,12 @@ def _apply_aggregation(
     return None
 
 
-def _make_sort_key(
-    row: dict[str, Any],
-    sort_specs: list[SortSpec],
-) -> tuple:
-    """Build a composite sort key from multiple sort specs.
-
-    Handles:
-    - Mixed ASC/DESC in composite sorts
-    - None values sorted last regardless of direction
-    - Strings reverse-ordered by negating character ordinals for DESC
-    """
-    keys: list[Any] = []
-    for s in sort_specs:
-        val = row.get(s.column)
-        if s.direction == SortDir.DESC:
-            if val is None:
-                keys.append((2,))  # None always last
-            elif isinstance(val, (int, float)):
-                keys.append((-val,))
-            else:
-                # Strings: reverse by negating character ordinals
-                keys.append(tuple(-ord(c) for c in str(val)))
-        else:
-            # ASC
-            if val is None:
-                keys.append((1,))  # None goes last in ASC too
-            else:
-                keys.append((0, val) if isinstance(val, (int, float)) else (0,) + tuple(ord(c) for c in str(val)))
-    return tuple(keys)
+def _sort_value(value: Any) -> tuple[int, Any]:
+    """Map a value onto a totally ordered key, ranking mixed types stably."""
+    if isinstance(value, bool):
+        return (0, int(value))
+    if isinstance(value, (int, float)):
+        return (1, value)
+    if isinstance(value, str):
+        return (3, value)
+    return (2, value)

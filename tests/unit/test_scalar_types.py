@@ -4,9 +4,9 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-from core.errors import ParseError
-from core.types import StringType, DateType, BooleanType
 
+from core.errors import ParseError
+from core.types import BooleanType, DateType, StringType
 
 # ── StringType ───────────────────────────────────────────────────────────────────
 

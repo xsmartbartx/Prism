@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "prism",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["PRISM_DATA_DIR=./var-dev", "PRISM_LOG_JSON=false", "PRISM_BASE_URL=http://localhost:8080", ".venv/bin/python", "-m", "server.cli", "serve", "--port", "8080"],
+      "port": 8080
+    }
+  ]
+}

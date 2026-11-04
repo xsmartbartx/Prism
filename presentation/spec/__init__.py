@@ -5,7 +5,21 @@ from presentation.spec.view_spec import (
     EncodingChannel,
     GuideConfig,
     MarkType,
+    NumberFormat,
+    Orientation,
     ScaleConfig,
     ScaleType,
     ViewSpec,
 )
+
+__all__ = [
+    "Encoding",
+    "EncodingChannel",
+    "GuideConfig",
+    "MarkType",
+    "NumberFormat",
+    "Orientation",
+    "ScaleConfig",
+    "ScaleType",
+    "ViewSpec",
+]

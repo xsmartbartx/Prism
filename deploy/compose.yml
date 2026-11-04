@@ -1,37 +1,100 @@
-# Prism — development / single-node deployment
-# Brings up the full platform on one machine.
+# Prism — single-node production deployment.
+#
+#   cp env.example .env    # set PRISM_DOMAIN and secrets
+#   docker compose up -d
+#
+# From a source checkout (builds the image locally):
+#   docker compose -f compose.yml -f compose.build.yml up -d --build
+#
+# Caddy terminates TLS with automatic Let's Encrypt certificates for
+# PRISM_DOMAIN. Prism itself is not published to the host network.
+# Add `--profile postgres` to use PostgreSQL instead of embedded SQLite.
+
+name: prism
+
+x-prism-env: &prism-env
+  PRISM_ENV: production
+  PRISM_BASE_URL: https://${PRISM_DOMAIN:?Set PRISM_DOMAIN in .env}
+  PRISM_SECRET_KEY: ${PRISM_SECRET_KEY:-}
+  PRISM_LICENSE_KEY: ${PRISM_LICENSE_KEY:-}
+  PRISM_DATABASE_URL: ${PRISM_DATABASE_URL:-}
+  PRISM_MAX_UPLOAD_MB: ${PRISM_MAX_UPLOAD_MB:-100}
+  PRISM_FORWARDED_ALLOW_IPS: "*"
+  PRISM_LOG_LEVEL: ${PRISM_LOG_LEVEL:-INFO}
 
 services:
   prism:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-    image: prism:latest
-    container_name: prism
+    image: ${PRISM_IMAGE:-ghcr.io/xsmartbartx/prism:latest}
     restart: unless-stopped
-    ports:
-      - "8080:8080"
-    environment:
-      PRISM_ENV: production
-      PRISM_SHARE_SECRET: ${PRISM_SHARE_SECRET:-change-me-in-production}
+    environment: *prism-env
     volumes:
       - prism_data:/var/lib/prism
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m
     security_opt:
       - no-new-privileges:true
+    cap_drop: [ALL]
+    expose:
+      - "8080"
+    deploy:
+      resources:
+        limits:
+          memory: ${PRISM_MEMORY_LIMIT:-2g}
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    depends_on:
+      prism:
+        condition: service_healthy
+    environment:
+      PRISM_DOMAIN: ${PRISM_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  backup:
+    image: ${PRISM_IMAGE:-ghcr.io/xsmartbartx/prism:latest}
+    restart: unless-stopped
+    depends_on:
+      prism:
+        condition: service_healthy
+    environment: *prism-env
+    volumes:
+      - prism_data:/var/lib/prism
+    entrypoint: ["sh", "-c"]
+    command: ["while true; do prism backup --keep ${PRISM_BACKUP_KEEP:-14}; sleep 86400; done"]
     read_only: true
     tmpfs:
       - /tmp
+    security_opt:
+      - no-new-privileges:true
 
-  # Development database (optional — Phase 1)
-  # postgres:
-  #   image: postgres:16-alpine
-  #   environment:
-  #     POSTGRES_DB: prism
-  #     POSTGRES_USER: prism
-  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-prism}
-  #   volumes:
-  #     - pg_data:/var/lib/postgresql/data
+  postgres:
+    profiles: ["postgres"]
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: prism
+      POSTGRES_USER: prism
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prism -d prism"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   prism_data:
-  # pg_data:
+  caddy_data:
+  caddy_config:
+  pg_data:

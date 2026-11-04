@@ -10,7 +10,6 @@ Phase 0 v0: Bar, line, table; SVG target.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -21,6 +20,26 @@ class MarkType(str, Enum):
     BAR = "bar"
     LINE = "line"
     TABLE = "table"
+    AREA = "area"
+    SCATTER = "scatter"
+    PIE = "pie"
+    KPI = "kpi"
+
+
+class NumberFormat(str, Enum):
+    """How measure values are displayed."""
+
+    AUTO = "auto"
+    COMPACT = "compact"
+    INTEGER = "integer"
+    DECIMAL = "decimal"
+    PERCENT = "percent"
+    CURRENCY = "currency"
+
+
+class Orientation(str, Enum):
+    VERTICAL = "vertical"
+    HORIZONTAL = "horizontal"
 
 
 class ScaleType(str, Enum):
@@ -132,7 +151,48 @@ class ViewSpec(BaseModel):
         le=4000,
     )
 
+    description: str | None = Field(
+        default=None,
+        max_length=2000,
+        description="Accessible long description (rendered as <desc>).",
+    )
+
+    orientation: Orientation = Field(
+        default=Orientation.VERTICAL, description="Bar direction (bar mark only)."
+    )
+
+    stacked: bool = Field(default=False, description="Stack series instead of grouping.")
+
+    show_values: bool = Field(default=False, description="Label each mark with its value.")
+
+    show_legend: bool = Field(default=True, description="Show a legend for multiple series.")
+
+    number_format: NumberFormat = Field(default=NumberFormat.AUTO)
+
+    currency: str = Field(default="USD", min_length=3, max_length=3)
+
+    locale: str = Field(default="en_US", description="Locale for number and date labels.")
+
+    time_grain: str | None = Field(
+        default=None,
+        pattern="^(day|week|month|quarter|year)$",
+        description="Grain of a date x-axis, for label formatting.",
+    )
+
+    theme: str = Field(default="light", pattern="^(light|dark)$")
+
+    max_categories: int = Field(
+        default=30, ge=2, le=500, description="Cap on categories before 'Other' grouping."
+    )
+
     model_config = ConfigDict(frozen=True)
+
+    def encodings_for(self, channel: EncodingChannel) -> list[Encoding]:
+        """All encodings on a channel (several Y encodings = several series)."""
+        return [e for e in self.encodings if e.channel == channel]
+
+    def fields(self) -> set[str]:
+        return {e.field for e in self.encodings}
 
     def encoding_for(self, channel: EncodingChannel) -> Encoding | None:
         """Get the encoding for a given visual channel, or None."""
@@ -140,3 +200,41 @@ class ViewSpec(BaseModel):
             if e.channel == channel:
                 return e
         return None
+
+
+_REQUIRED: dict[MarkType, list[set[EncodingChannel]]] = {
+    MarkType.BAR: [{EncodingChannel.X}, {EncodingChannel.Y}],
+    MarkType.LINE: [{EncodingChannel.X}, {EncodingChannel.Y}],
+    MarkType.AREA: [{EncodingChannel.X}, {EncodingChannel.Y}],
+    MarkType.SCATTER: [{EncodingChannel.X}, {EncodingChannel.Y}],
+    MarkType.PIE: [{EncodingChannel.X, EncodingChannel.COLOR}, {EncodingChannel.Y}],
+    MarkType.KPI: [{EncodingChannel.Y}],
+    MarkType.TABLE: [],
+}
+
+
+def validate_view(spec: ViewSpec, output_columns: list[str] | set[str]) -> list[str]:
+    """Static check of a view spec against the columns its query produces."""
+    errors: list[str] = []
+    outputs = set(output_columns)
+    channels = {e.channel for e in spec.encodings}
+    for alternatives in _REQUIRED[spec.mark]:
+        if not channels & alternatives:
+            names = " or ".join(sorted(c.value for c in alternatives))
+            errors.append(f"A {spec.mark.value} chart needs a {names} encoding")
+    for e in spec.encodings:
+        if outputs and e.field not in outputs:
+            errors.append(
+                f"Encoding '{e.channel.value}' uses '{e.field}', which the query does not "
+                f"return. Available: {sorted(outputs)}"
+            )
+    singles = [
+        c
+        for c in (EncodingChannel.X, EncodingChannel.COLOR, EncodingChannel.SIZE)
+        if len(spec.encodings_for(c)) > 1
+    ]
+    for c in singles:
+        errors.append(f"Only one '{c.value}' encoding is allowed")
+    if len(spec.encodings_for(EncodingChannel.Y)) > 1 and spec.encoding_for(EncodingChannel.COLOR):
+        errors.append("Use either several y encodings or a color encoding, not both")
+    return errors

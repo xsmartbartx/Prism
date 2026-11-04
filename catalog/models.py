@@ -7,6 +7,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
+from core.clock import utcnow
+
 
 class ArtifactType(str, Enum):
     """Types of artifacts in the catalog."""
@@ -53,7 +55,7 @@ class CatalogEntry:
     owner: str | None = field(default=None)
     """Who owns or created this artifact."""
 
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=utcnow)
     """When this artifact was first created."""
 
     updated_at: datetime | None = field(default=None)
@@ -96,7 +98,7 @@ class AuditEvent:
     event_id: str
     """Unique identifier for this event."""
 
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=utcnow)
     """When this event occurred."""
 
     actor: str | None = field(default=None)

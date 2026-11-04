@@ -65,12 +65,12 @@ class DataType(ABC):
 
     def eq(self, a: Any, b: Any) -> bool:
         """Compare two values for equality under this type's semantics."""
-        return a == b
+        return bool(a == b)
 
     def lt(self, a: Any, b: Any) -> bool:
         """Return True if a < b under this type's sort order."""
-        return a < b
+        return bool(a < b)
 
     def gt(self, a: Any, b: Any) -> bool:
         """Return True if a > b under this type's sort order."""
-        return a > b
+        return bool(a > b)

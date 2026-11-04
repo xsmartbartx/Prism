@@ -1,18 +1,85 @@
-PROPRIETARY SOFTWARE LICENSE
+PRISM COMMERCIAL LICENSE AGREEMENT
 
-Copyright (c) 2026 xsmartbartx
-All rights reserved.
+Copyright (c) 2026 xsmartbartx ("Licensor"). All rights reserved.
 
-The software, source code, documentation, configuration, assets, and other materials in this repository (the "Software") are proprietary and are owned by the copyright holder, except for third-party materials identified as subject to separate licenses.
+This agreement governs use of the Prism software, including its source
+code, container images, documentation and updates (the "Software"). By
+installing or using the Software you ("Licensee") accept these terms.
 
-The Software may be viewed for evaluation and review purposes only. No license is granted to use, reproduce, modify, adapt, distribute, publish, sublicense, sell, rent, lease, deploy, host, provide as a service, or create derivative works from the Software without prior written authorization from the copyright holder.
+1. EDITIONS
 
-Third-party libraries, frameworks, assets, datasets, or other materials remain subject to their respective licenses. This License does not supersede those licenses.
+1.1 Community Edition. Licensor grants Licensee a free, non-exclusive,
+    non-transferable, revocable license to install and use the Software
+    on infrastructure controlled by Licensee, for Licensee's internal
+    business purposes, within the limits of the Community plan enforced
+    by the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW.
+1.2 Paid Editions (Pro, Business). Upon payment of the applicable fees,
+    Licensor issues a license key. The key grants a non-exclusive,
+    non-transferable license to use the Software on one instance, for
+    the term, plan, seats and workspaces stated in the key, for
+    Licensee's internal business purposes. Business plan customers may
+    additionally make dashboards and charts available to their own
+    clients through the Software's sharing and embedding features.
 
-All rights not expressly granted by this License are reserved by the copyright holder.
+2. RESTRICTIONS
 
-For commercial licensing or other permissions, contact the copyright holder through the contact information associated with this repository.
+Licensee shall not, and shall not permit others to:
+  (a) circumvent, disable or modify license verification or plan limits;
+  (b) copy, redistribute, sublicense, sell, rent or lease the Software;
+  (c) offer the Software to third parties as a hosted or managed service,
+      except as permitted for Business plan customers in section 1.2;
+  (d) remove proprietary notices, except Prism branding on shared pages
+      where the licensed plan permits it;
+  (e) use license keys issued to another party.
 
-This License is proprietary and is not an open-source license.
+Modifications for Licensee's own internal use are permitted for
+configuration and integration purposes, provided that sections 2(a)–(e)
+are respected.
+
+3. LICENSEE DATA
+
+All data that Licensee imports into or creates with the Software remains
+Licensee's property. The Software does not transmit Licensee data to
+Licensor. License keys are verified offline.
+
+4. THIRD-PARTY COMPONENTS
+
+The Software includes open-source components that are licensed under
+their own terms. Those terms prevail for the respective components.
+
+5. FEES, TERM AND TERMINATION
+
+Paid licenses run for the term stated in the key and renew only by
+issuance of a new key. Licensor may terminate this agreement if Licensee
+materially breaches it and fails to cure the breach within 30 days of
+notice. On termination Licensee shall stop using the Software, except
+that Licensee may continue to access and export its own data.
+
+6. WARRANTY DISCLAIMER
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NON-INFRINGEMENT, TO THE MAXIMUM EXTENT PERMITTED
+BY APPLICABLE LAW. Any service levels or support commitments apply only
+if agreed in a separate written order.
+
+7. LIMITATION OF LIABILITY
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, LICENSOR'S TOTAL
+LIABILITY ARISING OUT OF THIS AGREEMENT SHALL NOT EXCEED THE FEES PAID BY
+LICENSEE FOR THE SOFTWARE IN THE TWELVE MONTHS BEFORE THE CLAIM, AND
+LICENSOR SHALL NOT BE LIABLE FOR INDIRECT, INCIDENTAL, SPECIAL OR
+CONSEQUENTIAL DAMAGES, OR LOSS OF DATA, PROFITS OR REVENUE. Nothing in
+this agreement limits liability that cannot be limited by law.
+
+8. GENERAL
+
+This agreement is governed by the laws of the country in which Licensor
+has its registered residence or seat, excluding conflict-of-law rules.
+It is the entire agreement regarding the Software unless superseded by a
+signed order form. If a provision is unenforceable, the remainder stays
+in effect.
+
+For commercial licensing, contact the Licensor through the contact
+details published with the Software or on its website.

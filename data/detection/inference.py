@@ -10,17 +10,19 @@ Strategy per ADR-0003 D1:
 
 from __future__ import annotations
 
+from core.errors import ParseError
 from core.types import (
-    IntegerType,
-    FloatType,
-    StringType,
-    DateType,
     BooleanType,
+    DataType,
+    DateType,
+    FloatType,
+    IntegerType,
+    StringType,
 )
 from data.detection.models import (
-    TypeCandidate,
     ColumnInferenceResult,
     InferenceResult,
+    TypeCandidate,
 )
 
 # Ordered list of (type_name, DataType constructor) to test
@@ -33,7 +35,7 @@ _TYPE_TESTS: list[tuple[str, str]] = [
 ]
 
 
-def _build_type_instance(type_name: str, locale: str) -> object:
+def _build_type_instance(type_name: str, locale: str) -> DataType:
     """Create a type instance by name."""
     if type_name == "integer":
         return IntegerType(locale=locale)
@@ -90,7 +92,9 @@ class TypeInferenceEngine:
             return ColumnInferenceResult(
                 column_name=column_name,
                 candidates=[
-                    TypeCandidate(type_name="string", confidence=1.0, parsable_count=0, total_count=0),
+                    TypeCandidate(
+                        type_name="string", confidence=1.0, parsable_count=0, total_count=0
+                    ),
                 ],
                 is_ambiguous=False,
             )
@@ -120,7 +124,7 @@ class TypeInferenceEngine:
                     parsable_count += 1
                     if len(samples) < 5:
                         samples.append(value)
-                except Exception:
+                except ParseError:
                     if len(failures) < 3:
                         failures.append(value)
 
@@ -151,7 +155,7 @@ class TypeInferenceEngine:
 
         # Merge and sort ALL candidates by confidence descending, then type priority.
         # This ensures string appears first when no specific type parses the data.
-        all_candidates = specific_candidates + [string_candidate]
+        all_candidates = [*specific_candidates, string_candidate]
         all_candidates.sort(key=lambda c: (-c.confidence, self._type_priority(c.type_name)))
 
         # Determine the best overall type (use specific types for ambiguity logic)

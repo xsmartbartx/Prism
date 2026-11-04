@@ -4,7 +4,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError as PydanticValidationError
 
-from core.types import ColumnContract, DriftPolicy, DataRole
+from core.errors import ValidationError
+from core.types import ColumnContract, DataRole, DriftPolicy
 
 
 class TestColumnContractCreation:
@@ -46,7 +47,7 @@ class TestColumnContractCreation:
     def test_invalid_type_raises_pydantic(self) -> None:
         """Pydantic won't restrict type to valid set, but our validate will."""
         c = ColumnContract(name="test", type="unknown_type")
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             c.validate_contract()
 
     def test_boolean_type(self) -> None:
