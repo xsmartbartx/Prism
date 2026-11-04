@@ -18,6 +18,8 @@ x-prism-env: &prism-env
   PRISM_SECRET_KEY: ${PRISM_SECRET_KEY:-}
   PRISM_LICENSE_KEY: ${PRISM_LICENSE_KEY:-}
   PRISM_DATABASE_URL: ${PRISM_DATABASE_URL:-}
+  # Escaped by Prism and inserted into the URL, so the password may contain any character.
+  PRISM_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-}
   PRISM_MAX_UPLOAD_MB: ${PRISM_MAX_UPLOAD_MB:-100}
   PRISM_FORWARDED_ALLOW_IPS: "*"
   PRISM_LOG_LEVEL: ${PRISM_LOG_LEVEL:-INFO}

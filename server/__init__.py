@@ -6,4 +6,4 @@ dataset store on disk, authentication, licensing and the REST API —
 lives here, so the engine stays testable without I/O.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"

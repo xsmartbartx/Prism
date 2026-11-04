@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import os
 import sys
 from typing import TYPE_CHECKING
 
@@ -60,7 +61,12 @@ def cmd_create_admin(args: argparse.Namespace) -> int:
     settings.ensure_dirs()
     db = Database(settings.resolved_database_url)
     upgrade(db)
-    password = args.password or getpass.getpass("Password: ")
+    if args.random_password:
+        import secrets
+
+        password = secrets.token_urlsafe(32)
+    else:
+        password = args.password or getpass.getpass("Password: ")
     auth = AuthService(settings.session_hours, settings.login_rate_limit)
     with db.transaction() as s:
         user, ws = auth.setup(
@@ -94,6 +100,35 @@ def cmd_reset_password(args: argparse.Namespace) -> int:
         user.is_active = True
         AuthService.revoke_all_sessions(s, user.id)
     print(f"Password reset for {args.email}; all sessions signed out")
+    return 0
+
+
+def cmd_reset_link(args: argparse.Namespace) -> int:
+    """Print a single-use password link, so nobody ever has to know or send a password."""
+    from sqlalchemy import select
+
+    from server.db import Database
+    from server.db.models import Membership, Role, User
+    from server.services.auth import AuthService
+    from server.services.context import Actor
+
+    settings = _settings()
+    db = Database(settings.resolved_database_url)
+    with db.transaction() as s:
+        user = s.scalars(select(User).where(User.email == args.email.strip().lower())).first()
+        if user is None:
+            print(f"No user {args.email}", file=sys.stderr)
+            return 1
+        membership = s.scalars(select(Membership).where(Membership.user_id == user.id)).first()
+        if membership is None:
+            print(f"{args.email} is not a member of any workspace", file=sys.stderr)
+            return 1
+        system = Actor(None, "cli", membership.workspace_id, Role.ADMIN, via="system")
+        issued = AuthService.create_invite(
+            s, system, user.email, Role(membership.role), kind="reset", hours=args.hours
+        )
+    print(f"{settings.base_url.rstrip('/')}/invite/{issued.secret}")
+    print(f"Single use, valid {args.hours} h. Using it signs {user.email} out everywhere.")
     return 0
 
 
@@ -137,8 +172,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--port", type=int)
     s.add_argument(
         "--forwarded-allow-ips",
-        default="127.0.0.1",
-        help="Proxies trusted for X-Forwarded-* headers (comma list or *)",
+        default=os.environ.get("PRISM_FORWARDED_ALLOW_IPS", "127.0.0.1"),
+        help="Proxies trusted for X-Forwarded-* headers (comma list or *); "
+        "default from PRISM_FORWARDED_ALLOW_IPS",
     )
     s.set_defaults(func=cmd_serve)
 
@@ -151,6 +187,11 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--email", required=True)
     a.add_argument("--name")
     a.add_argument("--password", help="Prompted when omitted")
+    a.add_argument(
+        "--random-password",
+        action="store_true",
+        help="Set an unknown random password (hand over with `prism reset-link`)",
+    )
     a.add_argument("--workspace", default="My workspace")
     a.set_defaults(func=cmd_create_admin)
 
@@ -158,6 +199,12 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--email", required=True)
     r.add_argument("--password", help="Prompted when omitted")
     r.set_defaults(func=cmd_reset_password)
+
+    rl = sub.add_parser("reset-link", help="Print a single-use link to set a user's password")
+    rl.add_argument("--email", required=True)
+    rl.add_argument("--hours", type=int, default=24, choices=range(1, 169), metavar="1-168")
+    rl.set_defaults(func=cmd_reset_link)
+
     b = sub.add_parser("backup", help="Write a backup archive of metadata and datasets")
     b.add_argument("--out", help="Directory for the archive (default: <data_dir>/backups)")
     b.add_argument("--include-uploads", action="store_true", help="Also archive original files")

@@ -22,8 +22,18 @@ def services(request: Request) -> Services:
 
 
 def client_ip(request: Request) -> str | None:
-    # Behind the bundled reverse proxy the real client is in X-Forwarded-For;
-    # uvicorn's --proxy-headers rewrites request.client accordingly.
+    """The caller's address, for rate limiting and the audit log.
+
+    Behind the bundled reverse proxy uvicorn's proxy headers rewrite request.client from
+    X-Forwarded-For (PRISM_FORWARDED_ALLOW_IPS). Behind a CDN that proxy only sees the CDN's
+    edge, so a deployment that is reachable *only* through it can name the CDN's client-IP
+    header (PRISM_CLIENT_IP_HEADER, e.g. CF-Connecting-IP) instead.
+    """
+    header = services(request).settings.client_ip_header
+    if header:
+        value = request.headers.get(header, "").strip()
+        if value and len(value) <= 64 and all(c in "0123456789abcdefABCDEF.:" for c in value):
+            return value
     return request.client.host if request.client else None
 
 

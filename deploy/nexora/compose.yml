@@ -1,0 +1,61 @@
+# Prism on the shared NEXORA host, behind the shared edge Caddy.
+#
+# Deploy ONLY via the host's locking script (never `docker compose up` directly there):
+#   /opt/nexora/infrastructure/deployment/deploy.sh prism
+#
+# No ports are published: the edge Caddy (edge-caddy-1) joins the `prism_default`
+# network and proxies prism.onenexora.com -> prism-app-1:8080.
+# The image is the published release (no build on the host). Secrets live in
+# /opt/prism/.env (mode 0600); see env.example next to this file.
+name: prism
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: prism
+      POSTGRES_USER: prism
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in /opt/prism/.env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prism -d prism"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 512m
+
+  app:
+    image: ghcr.io/xsmartbartx/prism:${PRISM_VERSION:-1.0.1}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PRISM_ENV: production
+      PRISM_BASE_URL: https://${PRISM_DOMAIN:?set PRISM_DOMAIN in /opt/prism/.env}
+      # The password is passed on its own and escaped by Prism, so any character is safe.
+      PRISM_DATABASE_URL: postgresql+psycopg://prism@postgres:5432/prism
+      PRISM_DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      PRISM_SECRET_KEY: ${PRISM_SECRET_KEY:?set PRISM_SECRET_KEY in /opt/prism/.env}
+      PRISM_LICENSE_KEY: ${PRISM_LICENSE_KEY:-}
+      PRISM_MAX_UPLOAD_MB: ${PRISM_MAX_UPLOAD_MB:-100}
+      PRISM_LOG_LEVEL: ${PRISM_LOG_LEVEL:-INFO}
+      # Only reachable through the edge Caddy on this network, which only accepts Cloudflare
+      # (cloudflare_only), so Cloudflare's header names the real client for rate limiting.
+      PRISM_FORWARDED_ALLOW_IPS: "*"
+      PRISM_CLIENT_IP_HEADER: CF-Connecting-IP
+    volumes:
+      - data:/var/lib/prism # dataset versions (Parquet), uploads, local backups: back it up
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    mem_limit: 1g
+
+volumes:
+  pgdata:
+  data:

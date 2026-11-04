@@ -1,6 +1,6 @@
 [project]
 name = "prism"
-version = "1.0.0"
+version = "1.0.1"
 description = "Self-hosted data platform — import, model, query, and visualize data declaratively"
 requires-python = ">=3.11"
 authors = [
