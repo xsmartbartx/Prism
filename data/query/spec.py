@@ -26,6 +26,8 @@ class AggFunction(str, Enum):
     COUNT = "count"
     MIN = "min"
     MAX = "max"
+    COUNT_DISTINCT = "count_distinct"
+    MEDIAN = "median"
 
 
 class FilterOp(str, Enum):
@@ -37,6 +39,23 @@ class FilterOp(str, Enum):
     GTE = "gte"
     LT = "lt"
     LTE = "lte"
+    IN = "in"
+    NOT_IN = "not_in"
+    CONTAINS = "contains"
+    STARTS_WITH = "starts_with"
+    IS_NULL = "is_null"
+    NOT_NULL = "not_null"
+    BETWEEN = "between"
+
+
+class TimeGrain(str, Enum):
+    """Calendar buckets for time dimensions."""
+
+    DAY = "day"
+    WEEK = "week"
+    MONTH = "month"
+    QUARTER = "quarter"
+    YEAR = "year"
 
 
 class SortDir(str, Enum):
@@ -49,8 +68,24 @@ class SortDir(str, Enum):
 class AggregationSpec(BaseModel):
     """One measure aggregation: column + function."""
 
-    column: str = Field(min_length=1, description="The column to aggregate.")
+    column: str = Field(
+        min_length=1, description="The column to aggregate ('*' with count = row count)."
+    )
     function: AggFunction = Field(description="The aggregation function to apply.")
+    alias: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=120,
+        description="Output column name. Defaults to the source column name.",
+    )
+
+    @property
+    def output_name(self) -> str:
+        if self.alias:
+            return self.alias
+        if self.column == "*":
+            return "count"
+        return self.column
 
 
 class FilterSpec(BaseModel):
@@ -107,6 +142,16 @@ class QuerySpec(BaseModel):
         default=0,
         description="Rows to skip before returning results.",
         ge=0,
+    )
+
+    columns: list[str] = Field(
+        default_factory=list,
+        description="Raw columns to project when there are no dimensions or measures.",
+    )
+
+    time_grain: dict[str, TimeGrain] = Field(
+        default_factory=dict,
+        description="Bucket a date dimension by calendar grain (dimension -> grain).",
     )
 
     model_config = ConfigDict(frozen=True)  # Immutable — value-semantic

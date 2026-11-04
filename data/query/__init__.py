@@ -19,6 +19,7 @@ from data.query.spec import (
     QuerySpec,
     SortDir,
     SortSpec,
+    TimeGrain,
 )
 
 __all__ = [
@@ -34,4 +35,5 @@ __all__ = [
     "ResultSet",
     "SortDir",
     "SortSpec",
+    "TimeGrain",
 ]

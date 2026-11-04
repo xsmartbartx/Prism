@@ -61,13 +61,14 @@ class TestCompilerValidation:
         with pytest.raises(ValidationError):
             _ = AggregationSpec(column="salary", function="bogus")  # type: ignore
 
-    def test_rejects_measures_without_dimensions(self) -> None:
+    def test_allows_grand_total_measures(self) -> None:
+        """Measures without dimensions aggregate over all rows (KPI tiles)."""
         spec = QuerySpec(
             measures=[AggregationSpec(column="salary", function=AggFunction.SUM)],
         )
         result = self.compiler.compile(spec)
-        assert not result.success
-        assert any("dimension" in err.lower() for err in result.errors)
+        assert result.success
+        assert result.plan is not None and result.plan.group_by_columns == ()
 
     def test_rejects_unknown_filter_column(self) -> None:
         spec = QuerySpec(
