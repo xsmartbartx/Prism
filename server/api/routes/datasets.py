@@ -64,6 +64,37 @@ def list_datasets(
         return out
 
 
+@router.post("/sample", status_code=201)
+def load_sample(a: Actor = Depends(actor), svc: Services = Depends(services)) -> dict[str, Any]:
+    """Create a ready-to-explore sample sales dataset (onboarding and demos)."""
+    from pathlib import Path
+
+    from server.schemas import ColumnDecision, CommitImport
+    from server.services.licensing import require_feature
+
+    a.require("author")
+    raw = (Path(__file__).resolve().parents[2] / "samples" / "sample-sales.csv").read_bytes()
+    with svc.db.transaction() as s:
+        require_feature(svc, s, "datasets")
+        imp = svc.imports.create(s, a, "sample-sales.csv", raw)
+        p = imp.proposal
+        req = CommitImport(
+            dataset_name="Sample sales",
+            description="Demo orders 2025–2026 by region, channel and product. Safe to delete.",
+            header_row=p["header_row"],
+            data_start_row=p["data_start_row"],
+            locale=p["locale"],
+            tags=["sample"],
+            columns=[
+                ColumnDecision(index=c["index"], source_name=c["source_name"], name=c["name"],
+                               type=c["type"], role=c["role"], locale=c["locale"])
+                for c in p["columns"]
+            ],
+        )
+        loaded = svc.imports.commit(s, a, imp, req)
+        return dataset_out(loaded.dataset, loaded.version)
+
+
 @router.get("/{dataset_id}")
 def get_dataset(
     dataset_id: str, a: Actor = Depends(actor), svc: Services = Depends(services)

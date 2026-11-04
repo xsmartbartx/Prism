@@ -280,11 +280,22 @@ def build_proposal(
         notes: list[str] = []
         col_locale = chosen_locale
         inferred = engine.infer_column(names[i], values)
+        specific = next((c for c in inferred.candidates if c.type_name != "string"), None)
         best = inferred.best_candidate()
-        if inferred.is_ambiguous:
-            # Propose the most plausible specific type; the reviewer decides.
-            best = next((c for c in inferred.candidates if c.type_name != "string"), best)
+        ambiguous = inferred.is_ambiguous
+        if specific is not None and specific.confidence >= 0.5:
+            # Propose the most plausible specific type. If any value fails to
+            # parse, those rows would be quarantined, so a person must decide.
+            best = specific
+            ambiguous = specific.confidence < 1.0
         type_name = best.type_name if best else "string"
+        if type_name in ("integer", "float") and any(
+            len(v.strip()) > 1 and v.strip()[0] == "0" and v.strip()[1].isdigit() for v in non_empty
+        ):
+            # Codes like ZIPs, phone numbers and account numbers: keep leading zeros.
+            type_name, ambiguous = "string", False
+            best = next((c for c in inferred.candidates if c.type_name == "string"), best)
+            notes.append("Leading zeros found; kept as text so codes are not altered")
         if type_name == "date":
             order = date_order(non_empty)
             if order == "dmy" and chosen_locale == "en_US":
@@ -293,7 +304,7 @@ def build_proposal(
             elif order == "mdy" and chosen_locale != "en_US":
                 col_locale = "en_US"
                 notes.append("Month-first dates detected")
-        if inferred.is_ambiguous and best is not None:
+        if ambiguous and best is not None:
             notes.append(
                 f"Only {best.confidence:.0%} of values parse as {best.type_name}; "
                 "choose a type or the rest will be quarantined"
@@ -308,7 +319,7 @@ def build_proposal(
                 locale=col_locale,
                 role=role.value,
                 nullable=True,
-                ambiguous=inferred.is_ambiguous,
+                ambiguous=ambiguous,
                 null_ratio=round(null_ratio, 4),
                 distinct_ratio=round(distinct_ratio, 4),
                 candidates=[

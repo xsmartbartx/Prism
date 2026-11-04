@@ -231,3 +231,16 @@ def test_dataset_export_neutralizes_formulas(client: TestClient) -> None:
     did = client.get("/api/v1/datasets").json()[0]["id"]
     text = client.get(f"/api/v1/datasets/{did}/export?format=csv").content.decode("utf-8-sig")
     assert "'=cmd" in text
+
+
+def test_sample_dataset(client: TestClient) -> None:
+    setup_admin(client)
+    r = client.post("/api/v1/datasets/sample", headers=H)
+    assert r.status_code == 201, r.text
+    ds = r.json()
+    cols = {c["name"]: (c["type"], c["role"]) for c in ds["current_version"]["columns"]}
+    assert cols["Order Date"] == ("date", "time")
+    assert cols["Revenue"] == ("float", "measure")
+    assert cols["Order ID"][1] == "identifier"
+    assert cols["Discounted"][0] == "boolean"
+    assert ds["row_count"] > 500 and ds["current_version"]["quarantine_count"] == 0

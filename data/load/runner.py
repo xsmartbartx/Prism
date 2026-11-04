@@ -137,6 +137,7 @@ def load_rows(
             continue
         values: list[Any] = []
         error: str | None = None
+        reason_key = ""
         for col, parser in zip(resolved, parsers, strict=True):
             raw = (
                 row[col.source_index]
@@ -149,6 +150,7 @@ def load_rows(
             if not text:
                 if not col.nullable:
                     error = f"'{col.name}' is required but empty"
+                    reason_key = error
                     break
                 values.append(None)
                 continue
@@ -156,12 +158,12 @@ def load_rows(
                 values.append(parser.parse(text))
             except ParseError:
                 error = f"'{col.name}': cannot read '{text[:40]}' as {col.type}"
+                reason_key = f"'{col.name}' is not a valid {col.type}"
                 break
         if error is None:
             for col, v in zip(resolved, values, strict=True):
                 good[col.name].append(v)
         else:
-            reason_key = error.split(":")[0] if ":" in error else error
             reasons[reason_key] += 1
             bad_rows.append(
                 {

@@ -42,3 +42,12 @@ coverage.xml
 # Vendor secrets (license signing key) — never commit
 .secrets/
 *.pem
+
+# Web UI
+web/node_modules/
+web/dist/
+server/static/
+
+# Local runtime data
+var/
+var-dev/

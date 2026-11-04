@@ -63,6 +63,17 @@ class TestProposal:
         assert types == {"Region": "string", "Monat": "date", "Umsatz": "float", "Menge": "integer"}
         assert not p.needs_review
 
+    def test_mostly_numeric_proposes_number_and_flags_review(self) -> None:
+        rows = [["amount"], *[[str(i * 10)] for i in range(1, 7)], ["lots"]]
+        col = build_proposal(rows).columns[0]
+        assert col.type == "integer" and col.ambiguous
+
+    def test_leading_zeros_stay_text(self) -> None:
+        rows = [["zip"], ["02134"], ["10001"], ["00501"]]
+        col = build_proposal(rows).columns[0]
+        assert col.type == "string" and not col.ambiguous
+        assert any("Leading zeros" in n for n in col.notes)
+
     def test_override_header_and_locale(self) -> None:
         rows = [["a", "b"], ["1", "2"], ["3", "4"]]
         p = build_proposal(rows, header_row=-1, locale="en_US")

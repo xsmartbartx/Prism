@@ -46,9 +46,9 @@ body.embed main{padding:8px;max-width:none}
 
 
 def _page(title: str, body: str, *, theme: str | None, embed: bool, branding: bool) -> str:
-    theme_attr = f' data-theme="{theme}"' if theme in ("light", "dark") else ""
+    theme_attr = f' data-theme="{theme if theme in ("light", "dark") else "light"}"'
     footer = (
-        '<footer>Made with <a href="https://prism.dev" rel="noopener">Prism</a></footer>'
+        "<footer>Made with Prism</footer>"
         if branding
         else ""
     )
