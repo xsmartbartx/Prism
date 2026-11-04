@@ -11,6 +11,14 @@ dependencies = [
     "pydantic>=2.0.0",
     "babel>=2.14.0",
     "openpyxl>=3.1.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "sqlalchemy>=2.0.30",
+    "alembic>=1.13.0",
+    "duckdb>=1.1.0",
+    "pydantic-settings>=2.4.0",
+    "python-multipart>=0.0.9",
+    "cryptography>=43.0.0",
 ]
 
 [project.optional-dependencies]
@@ -20,6 +28,8 @@ dev = [
     "pytest-benchmark>=4.0.0",
     "ruff>=0.5.0",
     "mypy>=1.10.0",
+    "httpx>=0.27.0",
+    "build>=1.2.0",
 ]
 
 [tool.pytest.ini_options]
@@ -44,10 +54,17 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["core*", "data*", "presentation*", "security*", "insight*", "schemas*", "catalog*"]
+include = ["core*", "data*", "presentation*", "security*", "insight*", "schemas*", "catalog*", "server*"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "C4", "RUF", "DTZ", "BLE"]
 ignore = ["E701", "E702", "RUF012", "UP042"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["B011", "E501"]
+"server/migrations/**" = ["E501"]
+
+[tool.setuptools.package-data]
+server = ["migrations/*.py", "migrations/*.mako", "migrations/versions/*.py", "static/**/*"]
+
+[project.scripts]
+prism = "server.cli:main"
