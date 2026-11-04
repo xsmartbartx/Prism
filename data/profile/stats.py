@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from datetime import date
 from typing import Any
 
@@ -12,7 +13,7 @@ import pyarrow.compute as pc
 def _jsonable(v: Any) -> Any:
     if isinstance(v, date):
         return v.isoformat()
-    if isinstance(v, float) and (v != v):
+    if isinstance(v, float) and not math.isfinite(v):
         return None
     return v
 

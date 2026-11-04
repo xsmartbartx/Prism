@@ -58,8 +58,9 @@ def test_every_mark_is_valid_accessible_svg(view: ViewSpec) -> None:
 
 @pytest.mark.parametrize("view", ALL, ids=lambda v: f"{v.mark.value}")
 def test_rendering_is_deterministic(view: ViewSpec) -> None:
-    r = SvgRenderer()
-    assert r.render(view, ROWS) == r.render(view, ROWS)
+    first = SvgRenderer().render(view, ROWS)
+    second = SvgRenderer().render(view, [dict(r) for r in ROWS])
+    assert first == second
 
 
 def test_marks_have_value_tooltips() -> None:

@@ -20,11 +20,14 @@ Prices are starting points: adjust in `site/index.html` and here. Limits live in
 ## Issue a license
 
 ```bash
-python tools/issue_license.py issue \
-  --key /secure/path/license-signing-key.pem \
+cd /secure/path        # the directory holding the signing key
+python /path/to/Prism/tools/issue_license.py issue \
+  --key license-signing-key.pem \
   --customer "Acme GmbH" --email it@acme.example \
   --plan pro --months 12 --seats 40
 ```
+
+The tool only accepts `.pem` key paths inside the current directory (no `..`, absolute paths elsewhere or symlinks).
 
 - `--months 0` issues a perpetual key (e.g. lifetime deals).
 - `--seats` / `--workspaces` override the plan defaults.

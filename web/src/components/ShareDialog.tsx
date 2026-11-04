@@ -22,7 +22,7 @@ export default function ShareDialog({ type, id, name, onClose }: { type: "chart"
 
   const load = () => get<Share[]>(`/api/v1/shares?artifact_id=${id}`).then(setShares).catch((e) => toast(e.message, "error"));
   useEffect(() => {
-    load();
+    void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -31,7 +31,7 @@ export default function ShareDialog({ type, id, name, onClose }: { type: "chart"
     try {
       const s = await post<Share>("/api/v1/shares", { artifact_type: type, artifact_id: id, expires_in_hours: expiry, allow_embed: embed });
       setCreated(s);
-      load();
+      void load();
     } catch (e) {
       toast((e as Error).message, "error");
     } finally {
@@ -96,7 +96,7 @@ export default function ShareDialog({ type, id, name, onClose }: { type: "chart"
                 onClick={async () => {
                   await del(`/api/v1/shares/${s.id}`);
                   toast("Link revoked");
-                  load();
+                  void load();
                 }}
               >
                 <Trash2 size={14} /> Revoke

@@ -129,14 +129,18 @@ def test_seat_limit_counts_pending_invites(client: TestClient) -> None:
     assert r.status_code == 402 and "5 users" in r.json()["error"]["message"]
 
 
-def test_cli_tool_issue(tmp_path: Path) -> None:
+def test_cli_tool_issue(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from tools.issue_license import main
 
-    out = tmp_path / "k.pem"
-    assert main(["keygen", "--out", str(out)]) == 0
-    assert main(["keygen", "--out", str(out)]) == 1  # never overwrite
-    assert main(["issue", "--key", str(out), "--customer", "X", "--email", "x@y.z",
+    monkeypatch.chdir(tmp_path)
+    assert main(["keygen", "--out", "k.pem"]) == 0
+    assert main(["keygen", "--out", "k.pem"]) == 1  # never overwrite
+    assert main(["issue", "--key", "k.pem", "--customer", "X", "--email", "x@y.z",
                  "--plan", "business", "--months", "0"]) == 0
+    (tmp_path / "link.pem").symlink_to(tmp_path / "k.pem")
+    for bad in ("../k.pem", "/etc/k.pem", "k.txt", "missing.pem", "link.pem"):
+        with pytest.raises(SystemExit):
+            main(["issue", "--key", bad, "--customer", "X", "--email", "x@y.z", "--plan", "pro"])
 
 
 def test_utc_now_sanity() -> None:

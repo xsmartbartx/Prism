@@ -50,7 +50,7 @@ export function SettingsHome() {
           <h2>Password</h2>
           <label className="field">Current password<input className="input" type="password" required value={pw.current_password} onChange={(e) => setPw({ ...pw, current_password: e.target.value })} autoComplete="current-password" /></label>
           <label className="field">New password <span className="hint">At least 10 characters.</span><input className="input" type="password" required minLength={10} value={pw.new_password} onChange={(e) => setPw({ ...pw, new_password: e.target.value })} autoComplete="new-password" /></label>
-          <div><button className="btn">Change password</button></div>
+          <div><button type="submit" className="btn">Change password</button></div>
         </form>
         {can.admin(me.role) && (
           <div className="card card-pad stack">
@@ -131,7 +131,7 @@ export function Members() {
                 <td><strong>{m.name}</strong><div className="muted small">{m.email}</div></td>
                 <td>
                   <select className="input input-sm" style={{ width: 130 }} value={m.role} disabled={m.id === me?.user.id}
-                    onChange={async (e) => { try { await patch(`/api/v1/workspace/members/${m.id}`, { role: e.target.value }); toast("Role updated"); members.reload(); } catch (err) { toast((err as Error).message, "error"); } }}>
+                    onChange={async (e) => { try { await patch(`/api/v1/workspace/members/${m.id}`, { role: e.target.value }); toast("Role updated"); void members.reload(); } catch (err) { toast((err as Error).message, "error"); } }}>
                     {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </td>
@@ -159,7 +159,7 @@ export function Members() {
                 {invites.data.map((i) => (
                   <tr key={i.id}>
                     <td>{i.email}</td><td>{i.role}</td><td className="muted">{fmtDate(i.expires_at, true)}</td>
-                    <td style={{ textAlign: "right" }}><button className="btn btn-sm btn-danger" onClick={async () => { await del(`/api/v1/workspace/invites/${i.id}`); invites.reload(); }}>Revoke</button></td>
+                    <td style={{ textAlign: "right" }}><button className="btn btn-sm btn-danger" onClick={async () => { await del(`/api/v1/workspace/invites/${i.id}`); void invites.reload(); }}>Revoke</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -171,7 +171,7 @@ export function Members() {
         <h3 style={{ marginBottom: 8 }}>Roles</h3>
         <dl className="kbd-row">{ROLES.map((r) => <Fragment key={r}><dt>{r}</dt><dd>{ROLE_HELP[r]}</dd></Fragment>)}</dl>
       </div>
-      {inviting && <InviteModal onClose={() => setInviting(false)} onCreated={(inv) => { setInviting(false); invites.reload(); setLink({ title: `Invitation for ${inv.email}`, url: inv.link! }); }} />}
+      {inviting && <InviteModal onClose={() => setInviting(false)} onCreated={(inv) => { setInviting(false); void invites.reload(); setLink({ title: `Invitation for ${inv.email}`, url: inv.link! }); }} />}
       {link && (
         <Modal title={link.title} onClose={() => setLink(null)}>
           <p className="muted small">Send this single-use link to the person (chat, email, …). It is shown only once.</p>
@@ -180,7 +180,7 @@ export function Members() {
       )}
       {removing && (
         <Confirm title="Remove member?" message={<>Remove <strong>{removing.email}</strong> from this workspace? Their account stays, but they lose access here.</>} confirmLabel="Remove"
-          onClose={() => setRemoving(null)} onConfirm={async () => { await del(`/api/v1/workspace/members/${removing.id}`); members.reload(); toast("Member removed"); }} />
+          onClose={() => setRemoving(null)} onConfirm={async () => { await del(`/api/v1/workspace/members/${removing.id}`); void members.reload(); toast("Member removed"); }} />
       )}
     </>
   );
@@ -220,7 +220,7 @@ export function ApiKeys() {
       <div className="card card-pad stack" style={{ marginBottom: 16 }}>
         <div className="row">
           <input className="input" style={{ maxWidth: 320 }} placeholder="Key name, e.g. Nightly ETL" value={name} onChange={(e) => setName(e.target.value)} />
-          <button className="btn btn-primary" disabled={!name.trim()} onClick={async () => { try { setCreated(await post<ApiKey>("/api/v1/workspace/api-keys", { name })); setName(""); keys.reload(); } catch (e) { toast((e as Error).message, "error"); } }}><KeyRound size={16} /> Create key</button>
+          <button className="btn btn-primary" disabled={!name.trim()} onClick={async () => { try { setCreated(await post<ApiKey>("/api/v1/workspace/api-keys", { name })); setName(""); void keys.reload(); } catch (e) { toast((e as Error).message, "error"); } }}><KeyRound size={16} /> Create key</button>
         </div>
         <p className="muted small">Send it as <code>Authorization: Bearer prism_…</code>. See the <a href="/api/docs" target="_blank" rel="noreferrer">API reference</a>.</p>
       </div>
@@ -233,7 +233,7 @@ export function ApiKeys() {
               {keys.data.map((k) => (
                 <tr key={k.id} style={k.revoked_at ? { opacity: 0.5 } : undefined}>
                   <td>{k.name}</td><td className="mono">prism_{k.prefix}_…</td><td>{fmtDate(k.created_at)}</td><td className="muted">{timeAgo(k.last_used_at)}</td>
-                  <td style={{ textAlign: "right" }}>{k.revoked_at ? <span className="badge">revoked</span> : <button className="btn btn-sm btn-danger" onClick={async () => { await del(`/api/v1/workspace/api-keys/${k.id}`); keys.reload(); }}><Trash2 size={14} /> Revoke</button>}</td>
+                  <td style={{ textAlign: "right" }}>{k.revoked_at ? <span className="badge">revoked</span> : <button className="btn btn-sm btn-danger" onClick={async () => { await del(`/api/v1/workspace/api-keys/${k.id}`); void keys.reload(); }}><Trash2 size={14} /> Revoke</button>}</td>
                 </tr>
               ))}
               {keys.data.length === 0 && <tr><td colSpan={5} className="muted" style={{ textAlign: "center", padding: 20 }}>No keys yet.</td></tr>}
@@ -292,8 +292,8 @@ export function License() {
             <>
               <textarea className="input mono" rows={5} placeholder="PRISM1.…" value={key} onChange={(e) => setKey(e.target.value)} />
               <div className="row">
-                <button className="btn btn-primary" disabled={busy || !key.trim()} onClick={async () => { setBusy(true); try { await put("/api/v1/admin/license", { key: key.trim() }); setKey(""); toast("License installed"); reload(); } catch (e) { toast((e as Error).message, "error"); } finally { setBusy(false); } }}>Install key</button>
-                {data.source === "database" && <button className="btn btn-danger" onClick={async () => { await del("/api/v1/admin/license"); toast("License removed"); reload(); }}>Remove</button>}
+                <button className="btn btn-primary" disabled={busy || !key.trim()} onClick={async () => { setBusy(true); try { await put("/api/v1/admin/license", { key: key.trim() }); setKey(""); toast("License installed"); void reload(); } catch (e) { toast((e as Error).message, "error"); } finally { setBusy(false); } }}>Install key</button>
+                {data.source === "database" && <button className="btn btn-danger" onClick={async () => { await del("/api/v1/admin/license"); toast("License removed"); void reload(); }}>Remove</button>}
               </div>
             </>
           ) : (

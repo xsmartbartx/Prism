@@ -8,6 +8,7 @@ Locale-aware float parsing handles decimal and thousands separators:
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from core.errors import ParseError
@@ -39,7 +40,7 @@ class FloatType(DataType):
         if normalized is None:
             raise ParseError(f"Cannot parse '{value}' as float (locale={self._locale})")
         result = float(normalized)
-        if result != result or result in (float("inf"), float("-inf")):
+        if not math.isfinite(result):
             raise ParseError(f"Non-finite float '{value}' is not allowed")
         return result
 

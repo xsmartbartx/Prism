@@ -32,7 +32,7 @@ export default function DatasetDetail() {
       const res = await post<Dataset & { load: { rows: number; quarantined: number } }>(`/api/v1/datasets/${id}/refresh`, fd);
       toast(`Loaded version ${res.current_version?.version}: ${fmtNum(res.load.rows)} rows`);
       setShowRefresh(false);
-      reload();
+      void reload();
     } catch (e) {
       toast((e as Error).message, "error");
     } finally {

@@ -26,7 +26,11 @@ export default function Layout() {
 
   return (
     <div className="shell">
-      <aside className={`sidebar ${open ? "open" : ""}`} onClick={() => setOpen(false)}>
+      <aside
+        className={`sidebar ${open ? "open" : ""}`}
+        onClick={() => setOpen(false)}
+        onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
+      >
         <NavLink to="/" className="brand">
           <Logo /> Prism
         </NavLink>

@@ -93,7 +93,7 @@ export default function DashboardView() {
           {edit ? (
             <>
               <button className="btn" onClick={() => setAdding(true)}><Plus size={16} /> Add chart</button>
-              <button className="btn" onClick={() => { setEdit(false); setParams({}); reload(); }}><X size={16} /> Cancel</button>
+              <button className="btn" onClick={() => { setEdit(false); setParams({}); void reload(); }}><X size={16} /> Cancel</button>
               <button className="btn btn-primary" onClick={save}><Check size={16} /> Save</button>
             </>
           ) : (

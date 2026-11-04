@@ -45,7 +45,7 @@ export function Setup() {
   const { busy, error, run } = useSubmit();
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    run(async () => {
+    void run(async () => {
       await post("/api/v1/setup", { ...f, workspace_name: f.workspace_name || "My workspace" });
       await refresh();
       nav("/datasets");
@@ -62,7 +62,7 @@ export function Setup() {
           <input className="input" type="password" required minLength={10} value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} autoComplete="new-password" />
         </label>
         <label className="field">Workspace name<input className="input" placeholder="e.g. Finance team" value={f.workspace_name} onChange={(e) => setF({ ...f, workspace_name: e.target.value })} /></label>
-        <button className="btn btn-primary btn-block" disabled={busy}>{busy ? "Creating…" : "Create account"}</button>
+        <button type="submit" className="btn btn-primary btn-block" disabled={busy}>{busy ? "Creating…" : "Create account"}</button>
       </form>
     </AuthCard>
   );
@@ -80,7 +80,7 @@ export function Login() {
         className="stack"
         onSubmit={(e) => {
           e.preventDefault();
-          run(async () => {
+          void run(async () => {
             await post("/api/v1/auth/login", { email, password });
             await refresh();
             nav("/datasets");
@@ -90,7 +90,7 @@ export function Login() {
         {error && <ErrorBox error={error} />}
         <label className="field">Email<input className="input" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="username" autoFocus /></label>
         <label className="field">Password<input className="input" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" /></label>
-        <button className="btn btn-primary btn-block" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
+        <button type="submit" className="btn btn-primary btn-block" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
         <p className="muted small" style={{ textAlign: "center" }}>Forgot your password? Ask a workspace admin for a reset link.</p>
       </form>
     </AuthCard>
@@ -131,7 +131,7 @@ export function AcceptInvite() {
         className="stack"
         onSubmit={(e) => {
           e.preventDefault();
-          run(async () => {
+          void run(async () => {
             await post(`/api/v1/invites/${encodeURIComponent(token)}/accept`, { name, password });
             await refresh();
             nav("/datasets");
@@ -144,7 +144,7 @@ export function AcceptInvite() {
           {reset ? "New password" : "Choose a password"} <span className="hint">At least 10 characters.</span>
           <input className="input" type="password" required minLength={10} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
         </label>
-        <button className="btn btn-primary btn-block" disabled={busy}>{reset ? "Save password" : "Join workspace"}</button>
+        <button type="submit" className="btn btn-primary btn-block" disabled={busy}>{reset ? "Save password" : "Join workspace"}</button>
       </form>
     </AuthCard>
   );

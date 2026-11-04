@@ -121,7 +121,7 @@ export function useLoad<T>(path: string | null, deps: unknown[] = []) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, ...deps]);
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
   return { data, error, loading, reload: load, setData };
 }
