@@ -60,7 +60,7 @@ def record(
         target_type=target_type,
         target_id=target_id,
         description=description,
-        details=details or {},
+        details=json.loads(json.dumps(details or {}, default=str)),
         ip=actor.ip if actor else None,
         prev_hash=prev or "",
     )

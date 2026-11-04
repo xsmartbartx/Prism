@@ -199,9 +199,7 @@ class ImportService:
             if sheet not in names:
                 raise BadRequest(f"Sheet '{sheet}' not found")
         try:
-            self._propose(
-                imp, self._bytes(imp), sheet=sheet, header_row=header_row, locale=locale
-            )
+            self._propose(imp, self._bytes(imp), sheet=sheet, header_row=header_row, locale=locale)
         except ConnectorError as exc:
             imp.status = ImportStatus.FAILED.value
             imp.error = str(exc)

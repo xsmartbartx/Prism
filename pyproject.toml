@@ -63,9 +63,13 @@ ignore = ["E701", "E702", "RUF001", "RUF002", "RUF003", "RUF012", "UP042"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["B011", "E501", "DTZ001"]
 "server/migrations/**" = ["E501"]
+"server/api/**" = ["B008"]
 
 [tool.setuptools.package-data]
 server = ["migrations/*.py", "migrations/*.mako", "migrations/versions/*.py", "static/**/*"]
 
 [project.scripts]
 prism = "server.cli:main"
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.File"]
