@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1 — 2026-11-04
+
+- Hosting on the NEXORA platform: `deploy/nexora/compose.yml` (compose project `prism`, PostgreSQL 16, published image, no host ports; served by the shared edge Caddy).
+- `prism create-admin --random-password` and `prism reset-link --email …` hand an account over with a single-use link, so no password is ever chosen for someone or sent.
+- Security hardening from the SonarCloud review: hash-locked, wheel-only dependency installs; actions pinned to commit SHAs; npm without lifecycle scripts; vendor license tool confined to its working directory.
+
 ## 1.0.0 — 2026-11-04
 
 First commercial release.

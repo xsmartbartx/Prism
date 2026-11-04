@@ -82,3 +82,31 @@ def test_cli_backup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         assert len(list((tmp_path / "d" / "backups").glob("*.tar.gz"))) == 1
     finally:
         get_settings.cache_clear()
+
+
+def test_cli_random_admin_and_reset_link(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from server.config import get_settings
+
+    monkeypatch.setenv("PRISM_DATA_DIR", str(tmp_path / "e"))
+    monkeypatch.setenv("PRISM_BASE_URL", "https://prism.example.test")
+    get_settings.cache_clear()
+    try:
+        assert main(["create-admin", "--email", "Owner@Example.test", "--random-password"]) == 0
+        capsys.readouterr()
+        assert main(["reset-link", "--email", "owner@example.test", "--hours", "2"]) == 0
+        link = capsys.readouterr().out.splitlines()[0]
+        assert link.startswith("https://prism.example.test/invite/")
+        assert main(["reset-link", "--email", "nobody@example.test"]) == 1
+        settings = get_settings()
+        with TestClient(create_app(settings)) as c:
+            token = link.rsplit("/", 1)[1]
+            assert c.get(f"/api/v1/invites/{token}").json()["kind"] == "reset"
+            r = c.post(f"/api/v1/invites/{token}/accept", json={"password": "owner chosen secret"}, headers=H)
+            assert r.status_code == 200
+            assert r.json()["user"]["email"] == "owner@example.test"
+            # https base URL: the session cookie is Secure, as production requires
+            assert "secure" in r.headers["set-cookie"].lower()
+    finally:
+        get_settings.cache_clear()
