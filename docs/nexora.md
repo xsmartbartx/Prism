@@ -35,9 +35,12 @@ sudo docker network connect prism_default edge-caddy-1   # until the edge stack 
 
 No secrets file is created. `init-secrets` writes a random database password into the
 `prism_secrets` volume on first start (mode 600, one copy for Postgres, one libpq passfile for
-Prism) and keeps it on later starts; Prism generates its secret key in `prism_data`. Optional,
-non-secret overrides (for example `PRISM_LICENSE_KEY`) go in an env file in `/opt/prism`, which
-`deploy.sh prism` passes to Compose when it exists (see `deploy/nexora/env.example`).
+Prism) and keeps it on later starts; Prism generates its secret key in `prism_data`. If
+`prism_pgdata` already holds a database but `prism_secrets` has no password, `init-secrets` stops
+with an error instead of generating a password Postgres would not accept. Optional overrides go
+in an env file in `/opt/prism`, which `deploy.sh prism` passes to Compose when it exists (see
+`deploy/nexora/env.example`). A license key there is sensitive: create the file with mode 600
+before adding it.
 
 Claim the instance **before** the DNS record exists, so nobody else can complete the first-run setup:
 

@@ -21,18 +21,32 @@ services:
     network_mode: none
     volumes:
       - secrets:/secrets
+      - pgdata:/pgdata:ro
     command:
       - sh
       - -ec
       - |
         umask 077
         if [ ! -s /secrets/db_password ]; then
-          head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > /secrets/db_password
+          # A new password only fits a new database: Postgres keeps the password it was
+          # initialised with, so refuse rather than lock Prism out of an existing one.
+          if [ -s /pgdata/PG_VERSION ]; then
+            echo "init-secrets: prism_pgdata exists but prism_secrets has no password." >&2
+            echo "Restore the secrets volume, or set the password in Postgres and write it to" >&2
+            echo "/secrets/db_password in prism_secrets, then start again." >&2
+            exit 1
+          fi
+          head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > /secrets/db_password.tmp
+          mv /secrets/db_password.tmp /secrets/db_password
         fi
-        printf 'postgres:5432:prism:prism:%s\n' "$$(cat /secrets/db_password)" > /secrets/pgpass
         chown 70:70 /secrets/db_password
-        chown 10001:10001 /secrets/pgpass
-        chmod 600 /secrets/db_password /secrets/pgpass
+        chmod 600 /secrets/db_password
+        # Write the passfile beside the old one and rename it, so a running Prism never reads
+        # a half-written file.
+        printf 'postgres:5432:prism:prism:%s\n' "$$(cat /secrets/db_password)" > /secrets/pgpass.tmp
+        chown 10001:10001 /secrets/pgpass.tmp
+        chmod 600 /secrets/pgpass.tmp
+        mv /secrets/pgpass.tmp /secrets/pgpass
 
   postgres:
     image: postgres:16-alpine
