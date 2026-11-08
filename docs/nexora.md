@@ -10,10 +10,10 @@ route, `deploy.sh prism`) is described in NEXORA's ADR-0016. This file is the Pr
 |---|---|
 | Checkout | `/opt/prism` (this repository, `main`) |
 | Compose file | `deploy/nexora/compose.yml`, compose project `prism` |
-| Secrets | `/opt/prism/.env`, mode 0600 (template: `deploy/nexora/env.example`) |
-| Containers | `prism-app-1` (published image `ghcr.io/xsmartbartx/prism:$PRISM_VERSION`), `prism-postgres-1` |
+| Secrets | none on disk in the checkout: the DB password is generated into volume `prism_secrets`, the secret key into `prism_data` |
+| Containers | `prism-app-1` (published image `ghcr.io/xsmartbartx/prism:$PRISM_VERSION`), `prism-postgres-1`, one-shot `prism-init-secrets-1` |
 | Network | `prism_default`, joined by `edge-caddy-1`; no host ports |
-| Data | volumes `prism_pgdata` (metadata) and `prism_data` (Parquet datasets, uploads) |
+| Data | volumes `prism_pgdata` (metadata), `prism_data` (Parquet datasets, uploads, secret key) and `prism_secrets` |
 
 ## Deploy
 
@@ -29,11 +29,18 @@ after a release (or change the default in `compose.yml`), then deploy.
 
 ```bash
 sudo git clone https://github.com/xsmartbartx/Prism.git /opt/prism && sudo chown -R opc:opc /opt/prism
-cd /opt/prism
-install -m 600 deploy/nexora/env.example .env   # then fill POSTGRES_PASSWORD and PRISM_SECRET_KEY (openssl rand -hex 32)
-sudo docker compose --env-file .env -f deploy/nexora/compose.yml up -d
+cd /opt/prism && sudo docker compose -f deploy/nexora/compose.yml up -d
 sudo docker network connect prism_default edge-caddy-1   # until the edge stack is next recreated
 ```
+
+No secrets file is created. `init-secrets` writes a random database password into the
+`prism_secrets` volume on first start (mode 600, one copy for Postgres, one libpq passfile for
+Prism) and keeps it on later starts; Prism generates its secret key in `prism_data`. If
+`prism_pgdata` already holds a database but `prism_secrets` has no password, `init-secrets` stops
+with an error instead of generating a password Postgres would not accept. Optional overrides go
+in an env file in `/opt/prism`, which `deploy.sh prism` passes to Compose when it exists (see
+`deploy/nexora/env.example`). A license key there is sensitive: create the file with mode 600
+before adding it.
 
 Claim the instance **before** the DNS record exists, so nobody else can complete the first-run setup:
 

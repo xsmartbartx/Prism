@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- NEXORA host stack generates its own secrets: a one-shot `init-secrets` service writes a random database password into a private volume (Postgres reads it as a file, Prism through a libpq passfile), and Prism keeps generating its secret key in its data volume. No secrets file is needed on the host.
+
 ## 1.0.1 — 2026-11-04
 
 - Hosting on the NEXORA platform: `deploy/nexora/compose.yml` (compose project `prism`, PostgreSQL 16, published image, no host ports; served by the shared edge Caddy).
