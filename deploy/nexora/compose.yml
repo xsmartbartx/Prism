@@ -10,8 +10,9 @@
 # No secrets file is needed. On first start `init-secrets` writes a random database password
 # into the private `secrets` volume (read by Postgres, and by Prism through a libpq passfile);
 # Prism generates its own secret key in its data volume. Nobody, person or agent, ever sees
-# either. Optional non-secret overrides (PRISM_VERSION, PRISM_LICENSE_KEY, ...) may go in an
-# env file next to the checkout; see env.example.
+# either. Optional overrides (PRISM_VERSION, PRISM_LICENSE_KEY, ...) may go in an env file next
+# to the checkout; see env.example. A license key is sensitive (anyone holding it can reuse the
+# plan), so create that file with mode 600 before adding one.
 name: prism
 
 services:
