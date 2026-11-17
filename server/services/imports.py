@@ -19,7 +19,18 @@ from sqlalchemy.orm import Session
 from core.errors import ConnectorError, DriftDetected, PrismError
 from core.nulls import DEFAULT_NULL_TOKENS
 from core.types.column import ColumnContract, DriftPolicy
-from data.connectors import ConnectorLimits, SourceTable, list_sheets, read_delimited, read_sheet
+from data.connectors import (
+    ConnectorLimits,
+    SourceTable,
+    is_parquet,
+    is_sqlite,
+    list_sheets,
+    list_tables,
+    read_delimited,
+    read_parquet,
+    read_sheet,
+    read_table,
+)
 from data.detection.proposal import build_proposal
 from data.load.runner import LoadColumn, LoadResult, load_rows
 from data.load.store import DatasetStore
@@ -45,7 +56,21 @@ ALLOWED_EXTENSIONS = {
     ".txt": "csv",
     ".xlsx": "xlsx",
     ".xlsm": "xlsx",
+    ".sqlite": "sqlite",
+    ".sqlite3": "sqlite",
+    ".db": "sqlite",
+    ".parquet": "parquet",
 }
+KIND_CONNECTOR = {
+    "csv": ConnectorType.CSV,
+    "xlsx": ConnectorType.SPREADSHEET,
+    "sqlite": ConnectorType.SQLITE,
+    "parquet": ConnectorType.PARQUET,
+}
+KIND_LABEL = {"csv": "delimited text", "xlsx": "Excel", "sqlite": "SQLite", "parquet": "Parquet"}
+# Kinds whose files hold several tables; the import's ``sheet`` picks one (a sheet or a table).
+MULTI_TABLE = {"xlsx", "sqlite"}
+SUPPORTED = ".csv, .tsv, .txt, .xlsx, .xlsm, .sqlite, .sqlite3, .db or .parquet"
 PROPOSAL_ROWS = 20_000
 
 
@@ -78,15 +103,17 @@ class ImportService:
         ext = Path(name).suffix.lower()
         kind = ALLOWED_EXTENSIONS.get(ext)
         if kind is None:
-            raise BadRequest(
-                f"Unsupported file type '{ext or '?'}'. Upload .csv, .tsv, .txt, .xlsx or .xlsm"
-            )
+            raise BadRequest(f"Unsupported file type '{ext or '?'}'. Upload {SUPPORTED}")
         if not data:
             raise BadRequest("The file is empty")
         if len(data) > self.settings.max_upload_bytes:
             raise BadRequest(f"File exceeds the {self.settings.max_upload_mb} MB upload limit")
         if kind == "xlsx" and not data.startswith(b"PK"):
             raise BadRequest("File is not a valid .xlsx workbook")
+        if kind == "sqlite" and not is_sqlite(data):
+            raise BadRequest("File is not a SQLite database")
+        if kind == "parquet" and not is_parquet(data):
+            raise BadRequest("File is not a valid Parquet file")
 
         imp_id = new_id()
         folder = self.settings.uploads_dir / actor.workspace_id / imp_id
@@ -119,6 +146,8 @@ class ImportService:
         try:
             if kind == "xlsx":
                 imp.sheet_names = list_sheets(data, self.limits)
+            elif kind == "sqlite":
+                imp.sheet_names = list_tables(data, self.limits)
             self._propose(imp, data)
         except ConnectorError as exc:
             imp.status = ImportStatus.FAILED.value
@@ -149,6 +178,10 @@ class ImportService:
     ) -> SourceTable:
         if kind == "xlsx":
             return read_sheet(data, sheet, limits=self.limits, max_rows=max_rows)
+        if kind == "sqlite":
+            return read_table(data, sheet, limits=self.limits, max_rows=max_rows)
+        if kind == "parquet":
+            return read_parquet(data, limits=self.limits, max_rows=max_rows)
         return read_delimited(data, limits=self.limits, max_rows=max_rows)
 
     def _propose(
@@ -194,10 +227,11 @@ class ImportService:
         actor.require("author")
         if imp.status == ImportStatus.LOADED.value:
             raise BadRequest("This import has already been published")
-        if sheet is not None and imp.file_kind == "xlsx":
+        if sheet is not None and imp.file_kind in MULTI_TABLE:
             names = [sh["name"] for sh in imp.sheet_names]
             if sheet not in names:
-                raise BadRequest(f"Sheet '{sheet}' not found")
+                what = "Table" if imp.file_kind == "sqlite" else "Sheet"
+                raise BadRequest(f"{what} '{sheet}' not found")
         try:
             self._propose(imp, self._bytes(imp), sheet=sheet, header_row=header_row, locale=locale)
         except ConnectorError as exc:
@@ -228,11 +262,9 @@ class ImportService:
 
         binding = SourceBinding(
             name=req.dataset_name,
-            connector_type=(
-                ConnectorType.SPREADSHEET if imp.file_kind == "xlsx" else ConnectorType.CSV
-            ),
+            connector_type=KIND_CONNECTOR[imp.file_kind],
             source=imp.filename,
-            sheet_name=req.sheet if imp.file_kind == "xlsx" else None,
+            sheet_name=req.sheet if imp.file_kind in MULTI_TABLE else None,
             header_row_index=max(req.header_row, 0),
             data_start_row=req.data_start_row,
             delimiter=(imp.proposal or {}).get("delimiter"),
@@ -308,10 +340,10 @@ class ImportService:
         if binding_row is None:
             raise BadRequest("Dataset has no binding to refresh against")
         binding = SourceBinding.model_validate(binding_row.document)
+        expected_kind = next(k for k, c in KIND_CONNECTOR.items() if c == binding.connector_type)
         imp = self.create(s, actor, filename, data)
-        expected_kind = "xlsx" if binding.connector_type == ConnectorType.SPREADSHEET else "csv"
         if imp.file_kind != expected_kind:
-            raise BadRequest(f"This dataset is refreshed from {expected_kind} files")
+            raise BadRequest(f"This dataset is refreshed from {KIND_LABEL[expected_kind]} files")
         header_present = any(c.source_name for c in binding.columns)
         try:
             loaded = self._load(

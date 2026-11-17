@@ -13,7 +13,7 @@
 | API keys | Shown once, stored hashed, revocable, scoped to one workspace |
 | Share links | Random tokens stored hashed; read-only server-rendered pages with no JavaScript; expiry, revocation, view counting; embedding opt-in |
 | Queries | No raw SQL surface. Specs are validated against the column contract and compiled to parameterised SQL with quoted identifiers; DuckDB runs per query with external file/network access disabled and configuration locked; hard timeout |
-| File parsing | Size limits, zip-bomb checks (uncompressed size and ratio), `defusedxml` for XLSX, values-only reads (formulas are never evaluated, macros ignored), row/column/cell caps |
+| File parsing | Size limits, zip-bomb checks (uncompressed size and ratio), `defusedxml` for XLSX, values-only reads (formulas are never evaluated, macros ignored), row/column/cell caps. SQLite uploads are opened in memory only, read-only (`query_only`, `trusted_schema` off), behind an authorizer that allows reads of ordinary tables and nothing reached through a view or trigger, with a time limit per read; Parquet is read by pyarrow in batches |
 | Exports | Formula-injection neutralisation in CSV and XLSX |
 | Browser | Strict Content-Security-Policy (no inline scripts), `X-Frame-Options: DENY` except embeds, `nosniff`, restrictive Permissions-Policy |
 | Container | Non-root user, read-only root filesystem, all capabilities dropped, `no-new-privileges` |

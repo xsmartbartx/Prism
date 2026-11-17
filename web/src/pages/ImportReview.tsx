@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, RefreshCw } from "lucide-react";
 import { post, type ColumnProposal, type Dataset, type ImportRec, type PrismType } from "../api";
@@ -31,10 +31,16 @@ export default function ImportReview() {
   const [busy, setBusy] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
 
+  // A database holds several tables, so its dataset is named after the table (and follows the
+  // table picker) until the user types a name of their own.
+  const nameEdited = useRef(false);
+
   useEffect(() => {
     if (!imp) return;
     setCols(imp.proposal.columns.map((c) => ({ ...c, include: true })));
-    setName((n) => n || imp.filename.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " "));
+    const table = imp.file_kind === "sqlite" ? imp.proposal.sheet : null;
+    const suggested = (table ?? imp.filename.replace(/\.[^.]+$/, "")).replace(/[_-]+/g, " ");
+    setName((n) => (nameEdited.current && n ? n : suggested));
   }, [imp]);
 
   const p = imp?.proposal;
@@ -132,14 +138,14 @@ export default function ImportReview() {
       <div className="grid-2" style={{ marginBottom: 16 }}>
         <div className="card card-pad stack">
           <h2>Dataset</h2>
-          <label className="field">Name<input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={200} /></label>
+          <label className="field">Name<input className="input" value={name} onChange={(e) => { nameEdited.current = true; setName(e.target.value); }} maxLength={200} /></label>
           <label className="field">Description <span className="hint">Optional — what this data is and where it comes from.</span><textarea className="input" value={description} onChange={(e) => setDescription(e.target.value)} /></label>
         </div>
         <div className="card card-pad stack">
           <h2>Structure</h2>
-          {imp.file_kind === "xlsx" && imp.sheet_names.length > 0 && (
+          {(imp.file_kind === "xlsx" || imp.file_kind === "sqlite") && imp.sheet_names.length > 0 && (
             <label className="field">
-              Sheet
+              {imp.file_kind === "sqlite" ? "Table" : "Sheet"}
               <select className="input" value={p.sheet ?? ""} disabled={busy} onChange={(e) => repropose({ sheet: e.target.value, header_row: null })}>
                 {imp.sheet_names.map((s) => (
                   <option key={s.name} value={s.name}>{s.name}{s.hidden ? " (hidden)" : ""}</option>
