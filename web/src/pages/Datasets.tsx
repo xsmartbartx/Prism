@@ -82,7 +82,7 @@ export default function Datasets() {
               )
             }
           >
-            {author ? "Drop a spreadsheet above to create your first dataset, or start with sample data to explore Prism." : "Nothing has been shared with you yet. Ask an author to import a dataset."}
+            {author ? "Drop a spreadsheet or database file above to create your first dataset, or start with sample data to explore Prism." : "Nothing has been shared with you yet. Ask an author to import a dataset."}
           </Empty>
         </div>
       ) : (

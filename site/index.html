@@ -188,7 +188,7 @@ docker compose up -d
       <div class="section-head"><h2>Questions</h2></div>
       <details><summary>Do I need a database server?</summary><p>No. Prism runs with an embedded database out of the box. Point it at PostgreSQL when you want a managed database or higher concurrency — backups move between the two.</p></details>
       <details><summary>What happens if our license expires?</summary><p>You get a 14-day grace period, then Community limits apply. Nothing is deleted: dashboards stay readable and you can export everything.</p></details>
-      <details><summary>Which files can Prism read?</summary><p>Excel workbooks (.xlsx, .xlsm) and delimited text (CSV, TSV, semicolon- or pipe-separated) in UTF-8 or legacy encodings. Formulas are never executed — Prism reads the stored values.</p></details>
+      <details><summary>Which files can Prism read?</summary><p>Excel workbooks (.xlsx, .xlsm), delimited text (CSV, TSV, semicolon- or pipe-separated) in UTF-8 or legacy encodings, SQLite databases (.sqlite, .db; pick a table) and Parquet files. Formulas are never executed — Prism reads the stored values.</p></details>
       <details><summary>Can people outside the company see dashboards?</summary><p>Yes — create a public link with an optional expiry, or embed a chart in another site (Pro and Business). Links can be revoked at any time and every view is counted.</p></details>
       <details><summary>Is there an API?</summary><p>A documented REST API with personal API keys lets you automate imports, refreshes and queries — for example a nightly upload from your ERP export.</p></details>
     </div>

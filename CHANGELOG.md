@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Import SQLite databases (`.sqlite`, `.sqlite3`, `.db`) and Parquet files (`.parquet`). A database's tables appear in the review's table picker, and the dataset is named after the table. Both go through the same type proposal, review, versioning and refresh as spreadsheets. Uploaded databases are opened in memory, read-only and hardened: only ordinary tables are offered, nothing runs through a view or trigger, and each read has a time limit. BLOB values are skipped with a warning; Parquet nested values become JSON text and zoned timestamps become UTC.
 - NEXORA host stack generates its own secrets: a one-shot `init-secrets` service writes a random database password into a private volume (Postgres reads it as a file, Prism through a libpq passfile), and Prism keeps generating its secret key in its data volume. No secrets file is needed on the host.
 
 ## 1.0.1 — 2026-11-04

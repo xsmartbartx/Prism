@@ -125,7 +125,7 @@ export interface Dataset {
 export interface Candidate { type: PrismType; confidence: number; samples: string[]; failures: string[] }
 export interface ColumnProposal { index: number; source_name: string; name: string; type: PrismType; locale: string; role: string; nullable: boolean; ambiguous: boolean; null_ratio: number; distinct_ratio: number; candidates: Candidate[]; notes: string[] }
 export interface Proposal { header_row: number; data_start_row: number; locale: string; confidence: number; columns: ColumnProposal[]; preview: string[][]; row_estimate: number; warnings: string[]; sheet: string | null; delimiter: string | null; encoding: string | null; needs_review: boolean; sample_truncated?: boolean }
-export interface ImportRec { id: string; filename: string; file_kind: "csv" | "xlsx"; size_bytes: number; status: string; sheet_names: { name: string; hidden: boolean }[]; proposal: Proposal; error: string | null; dataset_id: string | null; created_at: string }
+export interface ImportRec { id: string; filename: string; file_kind: "csv" | "xlsx" | "sqlite" | "parquet"; size_bytes: number; status: string; sheet_names: { name: string; hidden: boolean }[]; proposal: Proposal; error: string | null; dataset_id: string | null; created_at: string }
 
 export interface Aggregation { column: string; function: "sum" | "avg" | "count" | "min" | "max" | "count_distinct" | "median"; alias?: string | null }
 export interface Filter { column: string; operator: string; value: unknown }

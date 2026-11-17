@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from core.errors import DriftDetected
 from data.load.store import DatasetStore
 from server.config import Settings
-from server.db.models import AuditEvent, DatasetVersion, ImportStatus, Role
+from server.db.models import AuditEvent, Binding, DatasetVersion, ImportStatus, Role
 from server.errors import BadRequest, Forbidden
 from server.schemas import ColumnDecision, CommitImport
 from server.services import audit
@@ -118,6 +118,88 @@ def test_xlsx_import(svc: ImportService, session: Session, actor: Actor) -> None
     assert loaded.version.profile["columns"]["Units"]["max"] == 27
 
 
+def _sqlite_bytes(tmp_path: Path, script: str) -> bytes:
+    import sqlite3
+
+    path = tmp_path / f"db-{abs(hash(script))}.sqlite"
+    conn = sqlite3.connect(path)
+    conn.executescript(script)
+    conn.commit()
+    conn.close()
+    return path.read_bytes()
+
+
+SHOP_DB = """
+CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT, country TEXT);
+INSERT INTO customers VALUES (1, 'Ada', 'UK'), (2, 'Lin', 'SG');
+CREATE TABLE orders (id INTEGER PRIMARY KEY, customer_id INTEGER, placed TEXT, total REAL);
+INSERT INTO orders VALUES (10, 1, '2026-01-05', 120.5), (11, 2, '2026-01-06', 80.25),
+                          (12, 1, '2026-01-07', 99.99);
+"""
+
+
+def test_sqlite_import_picks_a_table_and_refreshes(
+    svc: ImportService, session: Session, actor: Actor, tmp_path: Path
+) -> None:
+    raw = _sqlite_bytes(tmp_path, SHOP_DB)
+    imp = svc.create(session, actor, "shop.db", raw)
+    assert imp.file_kind == "sqlite"
+    assert [t["name"] for t in imp.sheet_names] == ["customers", "orders"]
+    assert imp.proposal["sheet"] == "customers"
+
+    imp = svc.repropose(session, actor, imp, sheet="orders", header_row=None, locale=None)
+    assert imp.proposal["sheet"] == "orders"
+    assert imp.proposal["header_row"] == 0
+    types = [c["type"] for c in imp.proposal["columns"]]
+    assert types == ["integer", "integer", "date", "float"]
+    with pytest.raises(BadRequest, match="Table 'nope' not found"):
+        svc.repropose(session, actor, imp, sheet="nope", header_row=None, locale=None)
+
+    loaded = svc.commit(session, actor, imp, _commit_req(imp, "Orders"))
+    assert loaded.version.row_count == 3
+    binding = session.get(Binding, loaded.version.binding_id)
+    assert binding is not None
+    assert binding.document["connector_type"] == "sqlite"
+    assert binding.document["sheet_name"] == "orders"
+
+    more = _sqlite_bytes(
+        tmp_path, SHOP_DB + "INSERT INTO orders VALUES (13, 2, '2026-01-08', 15.0);"
+    )
+    second = svc.refresh(session, actor, loaded.dataset, "shop-feb.sqlite", more)
+    assert second.version.version == 2
+    assert second.version.row_count == 4
+    assert second.version.binding_id == loaded.version.binding_id
+    with pytest.raises(BadRequest, match="refreshed from SQLite files"):
+        svc.refresh(session, actor, loaded.dataset, "orders.csv", b"id,total\n1,2\n")
+
+
+def test_parquet_import(svc: ImportService, session: Session, actor: Actor) -> None:
+    import io
+    from datetime import date
+
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    buf = io.BytesIO()
+    pq.write_table(
+        pa.table(
+            {
+                "region": ["EU", "US", "EU", "APAC"],
+                "day": [date(2026, 1, d) for d in range(1, 5)],
+                "units": [3, 5, 8, 13],
+            }
+        ),
+        buf,
+    )
+    imp = svc.create(session, actor, "sales.parquet", buf.getvalue())
+    assert imp.file_kind == "parquet"
+    assert imp.sheet_names == []
+    assert [c["type"] for c in imp.proposal["columns"]] == ["string", "date", "integer"]
+    loaded = svc.commit(session, actor, imp, _commit_req(imp, "Sales"))
+    assert loaded.version.row_count == 4
+    assert loaded.version.profile["columns"]["units"]["max"] == 13
+
+
 def test_rejects_bad_uploads(svc: ImportService, session: Session, actor: Actor) -> None:
     with pytest.raises(BadRequest, match="Unsupported"):
         svc.create(session, actor, "evil.exe", b"MZ")
@@ -125,6 +207,10 @@ def test_rejects_bad_uploads(svc: ImportService, session: Session, actor: Actor)
         svc.create(session, actor, "a.csv", b"")
     with pytest.raises(BadRequest, match="not a valid"):
         svc.create(session, actor, "a.xlsx", b"not a zip")
+    with pytest.raises(BadRequest, match="not a SQLite"):
+        svc.create(session, actor, "a.db", b"id,name\n1,a\n")
+    with pytest.raises(BadRequest, match="not a valid Parquet"):
+        svc.create(session, actor, "a.parquet", b"id,name\n1,a\n")
 
 
 def test_viewer_cannot_import(svc: ImportService, session: Session, actor: Actor) -> None:

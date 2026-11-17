@@ -1,10 +1,14 @@
 # User guide
 
-## Import a spreadsheet
+## Import a spreadsheet or database file
 
-1. Go to **Datasets** and drop an `.xlsx`, `.xlsm`, `.csv` or `.tsv` file (or click to browse).
+1. Go to **Datasets** and drop a file (or click to browse):
+   - Excel workbooks: `.xlsx`, `.xlsm`
+   - delimited text: `.csv`, `.tsv`, `.txt`
+   - SQLite databases: `.sqlite`, `.sqlite3`, `.db`
+   - Parquet files: `.parquet`
 2. Prism analyses the file and opens **Review import**:
-   - **Sheet** — pick another worksheet (hidden sheets are marked).
+   - **Sheet** or **Table** — pick another worksheet (hidden sheets are marked) or, for a SQLite database, another table. Each import makes one dataset from one sheet or table; import the file again for another.
    - **Header row** — Prism skips title and note rows above the table; correct it if needed.
    - **Number & date format** — e.g. German `1.234,56` and `31.12.2026` vs US `1,234.56` and `12/31/2026`.
    - **Columns** — rename, change type (text, integer, decimal, date, true/false), set the role (dimension, measure, time, identifier, geography), or untick to skip.
@@ -12,6 +16,8 @@
 4. Choose a **quarantine tolerance** and click **Publish dataset**.
 
 Values such as `n/a`, `-`, `NULL` or `#N/A` become empty cells in number and date columns. Codes with leading zeros (ZIP codes, account numbers) stay text so they are not altered.
+
+SQLite and Parquet columns already have types, but Prism still proposes and checks each column's type like any other file, so a refresh is validated the same way. From a SQLite database Prism offers ordinary tables only (views and virtual tables are not offered). Binary values (BLOBs) are not imported; the review lists the affected columns. In Parquet files, nested values (lists, structs, maps) are imported as JSON text and timestamps with a time zone are converted to UTC.
 
 ### Quarantine
 

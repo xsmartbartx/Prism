@@ -2,7 +2,7 @@
 
 **Self-hosted data platform — drop a spreadsheet, get a trustworthy chart, share a link.**
 
-Prism turns Excel and CSV files into typed, versioned datasets, lets people build charts and dashboards without SQL, and shares them with a link — on your own server, with an audit trail for every number.
+Prism turns Excel, CSV, SQLite and Parquet files into typed, versioned datasets, lets people build charts and dashboards without SQL, and shares them with a link — on your own server, with an audit trail for every number.
 
 - **Imports that don't lie.** Prism detects header rows, number/date formats and column types, then asks you to confirm what it can't be sure of. Rows that don't fit go to a quarantine you can inspect — nothing is silently coerced.
 - **Refreshes that fail loudly.** Load next month's file and Prism checks it against the dataset's column contract. A renamed or missing column stops the load with a clear message instead of producing a wrong number.

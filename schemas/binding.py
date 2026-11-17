@@ -33,11 +33,12 @@ class RefreshMode(str, Enum):
 
 
 class ConnectorType(str, Enum):
-    """Supported connector types for Phase 0."""
+    """Supported connector types."""
 
     SPREADSHEET = "spreadsheet"    # Excel (.xlsx, .xlsm)
     CSV = "csv"                   # Delimited text files
-    # More connectors added in Phase 1+
+    SQLITE = "sqlite"             # SQLite database file, one table (.sqlite, .sqlite3, .db)
+    PARQUET = "parquet"           # Parquet file (.parquet)
 
 
 class SourceBinding(BaseModel):
@@ -69,7 +70,9 @@ class SourceBinding(BaseModel):
 
     sheet_name: str | None = Field(
         default=None,
-        description="Sheet/tab name within a workbook. Required for spreadsheet connector.",
+        description=(
+            "Sheet/tab name within a workbook, or table name within a SQLite database."
+        ),
     )
 
     header_row_index: int = Field(

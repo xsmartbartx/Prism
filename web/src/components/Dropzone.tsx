@@ -29,7 +29,7 @@ export default function Dropzone({ onFile, busy, compact }: { onFile: (f: File) 
         ref={input}
         type="file"
         hidden
-        accept=".csv,.tsv,.txt,.xlsx,.xlsm"
+        accept=".csv,.tsv,.txt,.xlsx,.xlsm,.sqlite,.sqlite3,.db,.parquet"
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) onFile(f);
@@ -41,8 +41,8 @@ export default function Dropzone({ onFile, busy, compact }: { onFile: (f: File) 
       ) : (
         <div className="stack" style={{ alignItems: "center", gap: 6 }}>
           <UploadCloud size={compact ? 22 : 30} color="var(--accent)" />
-          <strong>Drop a spreadsheet here, or click to browse</strong>
-          <span className="muted small">Excel (.xlsx, .xlsm) or delimited text (.csv, .tsv). Prism detects headers, types and locale — you confirm.</span>
+          <strong>Drop a spreadsheet or database file here, or click to browse</strong>
+          <span className="muted small">Excel (.xlsx, .xlsm), delimited text (.csv, .tsv), SQLite (.sqlite, .db) or Parquet. Prism detects headers, types and locale — you confirm.</span>
         </div>
       )}
     </div>
