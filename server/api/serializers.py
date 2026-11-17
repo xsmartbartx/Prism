@@ -108,6 +108,7 @@ def dashboard_out(d: Dashboard) -> dict[str, Any]:
         "name": d.name,
         "description": d.description,
         "layout": d.layout,
+        "filters": d.filters or [],
         "owner_id": d.owner_id,
         "created_at": d.created_at,
         "updated_at": d.updated_at,

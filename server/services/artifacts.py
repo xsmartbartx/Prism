@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from core.clock import utcnow
 from data.load.store import DatasetStore
 from data.query import QuerySpec
+from data.query.spec import AggFunction, AggregationSpec, SortSpec
 from presentation.render.svg_renderer import SvgRenderer
 from presentation.spec.view_spec import ViewSpec, validate_view
 from server.db.models import (
@@ -28,7 +29,16 @@ from server.errors import BadRequest, NotFound
 from server.services import audit
 from server.services.auth import sha256
 from server.services.context import Actor
-from server.services.queries import QueryOutcome, QueryService
+from server.services.dashboard_filters import (
+    VALUE_LIMIT,
+    VALUE_TYPES,
+    Selection,
+    apply_selections,
+    clean_definitions,
+    field_key,
+    resolve_column,
+)
+from server.services.queries import QueryOutcome, QueryService, version_types
 
 MAX_DASHBOARD_TILES = 48
 
@@ -47,6 +57,16 @@ class RenderedChart:
     svg: str
     outcome: QueryOutcome
     view: ViewSpec
+    # Dashboard filters (labels) that narrowed this chart, and those that could not apply to it.
+    applied: tuple[str, ...] = ()
+    skipped: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class TileSource:
+    chart: Chart
+    dataset: Dataset
+    column_types: dict[str, str]
 
 
 class ArtifactService:
@@ -288,11 +308,17 @@ class ArtifactService:
         theme: str | None = None,
         width: int | None = None,
         height: int | None = None,
+        selections: list[Selection] | None = None,
     ) -> RenderedChart:
         ds = s.get(Dataset, chart.dataset_id)
         if ds is None:
             raise NotFound("The chart's dataset no longer exists")
         q, v = parse_specs(chart.query_spec, chart.view_spec)
+        applied: list[str] = []
+        skipped: list[str] = []
+        if selections:
+            types = version_types(self.queries.current_version(s, ds))
+            q, applied, skipped = apply_selections(q, types, selections)
         overrides: dict[str, Any] = {}
         if theme in ("light", "dark"):
             overrides["theme"] = theme
@@ -300,7 +326,16 @@ class ArtifactService:
             overrides["width"] = max(200, min(width, 4000))
         if height:
             overrides["height"] = max(100, min(height, 4000))
-        return self.render(s, actor, ds, q, v, overrides=overrides or None)
+        r = self.render(s, actor, ds, q, v, overrides=overrides or None)
+        if not (applied or skipped):
+            return r
+        return RenderedChart(
+            svg=r.svg,
+            outcome=r.outcome,
+            view=r.view,
+            applied=tuple(applied),
+            skipped=tuple(skipped),
+        )
 
     # ------------------------------------------------------------------
     # Dashboards
@@ -351,16 +386,32 @@ class ArtifactService:
         name: str,
         description: str,
         layout: list[dict[str, Any]],
+        filters: list[dict[str, Any]] | None = None,
         dashboard: Dashboard | None = None,
     ) -> Dashboard:
+        """Create or update a dashboard.
+
+        ``filters`` replaces the dashboard's filters and must name fields its tiles have.
+        Left out (None), the existing filters are kept, minus any whose field no tile has
+        any more (a removed chart takes its fields with it).
+        """
         actor.require("explore")
         clean = self._clean_layout(s, actor, layout)
+        fields = self.filter_fields(s, actor.workspace_id, clean)
+        if filters is not None:
+            clean_filters = clean_definitions(filters, fields)
+        else:
+            existing = (dashboard.filters if dashboard else None) or []
+            keys = {field_key(n) for n in fields}
+            kept = [f for f in existing if field_key(f["field"]) in keys]
+            clean_filters = clean_definitions(kept, fields)
         if dashboard is None:
             dashboard = Dashboard(
                 workspace_id=actor.workspace_id,
                 name=name.strip() or "Untitled",
                 description=description,
                 layout=clean,
+                filters=clean_filters,
                 owner_id=actor.user_id,
             )
             s.add(dashboard)
@@ -372,6 +423,7 @@ class ArtifactService:
             dashboard.name = name.strip() or dashboard.name
             dashboard.description = description
             dashboard.layout = clean
+            dashboard.filters = clean_filters
             dashboard.updated_at = utcnow()
             action = "dashboard.update"
         audit.record(
@@ -381,9 +433,124 @@ class ArtifactService:
             target_type="dashboard",
             target_id=dashboard.id,
             description=f"Saved dashboard {dashboard.name}",
-            details={"tiles": len(clean)},
+            details={"tiles": len(clean), "filters": [f["field"] for f in clean_filters]},
         )
         return dashboard
+
+    # ------------------------------------------------------------------
+    # Dashboard filters
+    # ------------------------------------------------------------------
+
+    def tile_sources(
+        self, s: Session, workspace_id: str, layout: list[dict[str, Any]]
+    ) -> list[TileSource]:
+        """Each tile's chart, dataset and current column types (tiles without data skipped)."""
+        out: list[TileSource] = []
+        for tile in layout:
+            chart = s.get(Chart, str(tile.get("chart_id", "")))
+            if chart is None or chart.workspace_id != workspace_id:
+                continue
+            ds = s.get(Dataset, chart.dataset_id)
+            version = s.get(DatasetVersion, ds.current_version_id) if ds else None
+            if ds is None or version is None or version.dataset_id != ds.id:
+                continue
+            out.append(TileSource(chart=chart, dataset=ds, column_types=version_types(version)))
+        return out
+
+    def filter_fields(
+        self, s: Session, workspace_id: str, layout: list[dict[str, Any]]
+    ) -> dict[str, set[str]]:
+        """Every column name the tiles' datasets have, with the types it has there."""
+        fields: dict[str, set[str]] = {}
+        for src in self.tile_sources(s, workspace_id, layout):
+            for name, col_type in src.column_types.items():
+                fields.setdefault(name, set()).add(col_type)
+        return fields
+
+    def filter_field_summary(
+        self, s: Session, actor: Actor, chart_ids: list[str]
+    ) -> list[dict[str, Any]]:
+        """Fields an editor can offer as filters for these charts, most widely shared first."""
+        layout = [{"chart_id": self.get_chart(s, actor, c).id} for c in dict.fromkeys(chart_ids)]
+        counts: dict[str, int] = {}
+        types: dict[str, set[str]] = {}
+        names: dict[str, str] = {}  # key -> the spelling first seen
+        for src in self.tile_sources(s, actor.workspace_id, layout):
+            for column, col_type in src.column_types.items():
+                key = field_key(column)
+                name = names.setdefault(key, column)
+                counts[name] = counts.get(name, 0) + 1
+                types.setdefault(name, set()).add(col_type)
+        rows: list[dict[str, Any]] = []
+        for name in sorted(counts, key=lambda n: (-counts[n], n.lower())):
+            kinds = []
+            if types[name] & VALUE_TYPES:
+                kinds.append("values")
+            if "date" in types[name]:
+                kinds.append("date_range")
+            if kinds:
+                rows.append(
+                    {
+                        "field": name,
+                        "types": sorted(types[name]),
+                        "charts": counts[name],
+                        "kinds": kinds,
+                    }
+                )
+        return rows
+
+    def filter_options(
+        self, s: Session, actor: Actor | None, dashboard: Dashboard, index: int
+    ) -> dict[str, Any]:
+        """What a viewer can pick for one filter: distinct values, or a date span."""
+        definitions = dashboard.filters or []
+        if not 0 <= index < len(definitions):
+            raise NotFound("Filter not found")
+        d = definitions[index]
+        field, kind = d["field"], d["kind"]
+        out: dict[str, Any] = {"field": field, "kind": kind, "label": d.get("label") or field}
+        sources: list[tuple[TileSource, str]] = []
+        seen_datasets: set[str] = set()
+        for src in self.tile_sources(s, dashboard.workspace_id, dashboard.layout):
+            column = resolve_column(field, src.column_types)
+            if column is not None and src.dataset.id not in seen_datasets:
+                seen_datasets.add(src.dataset.id)
+                sources.append((src, column))
+        if kind == "date_range":
+            lows, highs = [], []
+            for src, column in sources:
+                if src.column_types[column] != "date":
+                    continue
+                q = QuerySpec(
+                    measures=[
+                        AggregationSpec(column=column, function=AggFunction.MIN, alias="lo"),
+                        AggregationSpec(column=column, function=AggFunction.MAX, alias="hi"),
+                    ]
+                )
+                row = self.queries.run(s, actor, src.dataset, q).result.rows[0]
+                if row.get("lo") is not None:
+                    lows.append(row["lo"])
+                    highs.append(row["hi"])
+            out["min"] = min(lows).isoformat() if lows else None
+            out["max"] = max(highs).isoformat() if highs else None
+            return out
+
+        values: set[Any] = set()
+        truncated = False
+        for src, column in sources:
+            q = QuerySpec(
+                dimensions=[column],
+                measures=[AggregationSpec(column="*", function=AggFunction.COUNT, alias="n")],
+                sort=[SortSpec(column=column)],
+                limit=VALUE_LIMIT + 1,
+            )
+            rows = self.queries.run(s, actor, src.dataset, q).result.rows
+            truncated |= len(rows) > VALUE_LIMIT
+            values.update(r[column] for r in rows[:VALUE_LIMIT] if r[column] is not None)
+        ordered = sorted(values, key=lambda v: (type(v).__name__, v))
+        out["truncated"] = truncated or len(ordered) > VALUE_LIMIT
+        out["values"] = [_option_text(v) for v in ordered[:VALUE_LIMIT]]
+        return out
 
     def delete_dashboard(self, s: Session, actor: Actor, dashboard: Dashboard) -> None:
         if dashboard.owner_id != actor.user_id:
@@ -505,3 +672,12 @@ class ArtifactService:
             )
         ):
             sh.revoked_at = now
+
+
+def _option_text(value: Any) -> str:
+    """A picker value as the text a selection sends back (and the compiler can coerce)."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if hasattr(value, "isoformat"):
+        return str(value.isoformat())
+    return str(value)

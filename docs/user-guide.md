@@ -49,6 +49,17 @@ The preview is rendered live by the server exactly as it will appear in exports 
 
 **Dashboards → New dashboard**, then **Add chart**. In edit mode choose each tile's width and reorder tiles. **Save** when done.
 
+### Dashboard filters
+
+In edit mode, **Filters → Add a filter** lets viewers narrow the whole dashboard at once (up to six filters):
+
+- **Values**: viewers tick one or more values, such as regions or products. Works on text, whole-number, true/false and date fields.
+- **Date range**: viewers pick a from and/or to date. Works on date fields.
+
+A filter applies to every chart whose dataset has a field of that name. Matching ignores case and spacing, so `Region` and `region` match. A chart without the field stays unfiltered and says so (*Not filtered by Region*), so its numbers are never mistaken for the filtered slice. A filter only narrows what a chart already shows, on top of the chart's own filters.
+
+The picked values are part of the page address, so copying the link shares the filtered view. Shared dashboard links (`/s/…`) show the same filters as a simple form; viewers can filter without signing in, and the page needs no JavaScript.
+
 ## Share
 
 **Share** on a chart or dashboard creates a public, read-only link:

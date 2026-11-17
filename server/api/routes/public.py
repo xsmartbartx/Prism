@@ -3,6 +3,9 @@
 Rendered entirely on the server: no JavaScript, no API access, no data
 beyond what the shared artifact displays. Every view is counted and an
 invalid, expired or revoked token returns the same 404.
+
+A shared dashboard's filters are a plain GET form: a viewer narrows the tiles
+without any script, and the filtered page has its own link.
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ from server.container import Services
 from server.db.models import Chart, Dashboard, Share, Workspace
 from server.errors import NotFound
 from server.services.artifacts import ArtifactService
+from server.services.dashboard_filters import Selection, parse_selections
 
 router = APIRouter(include_in_schema=False)
 
@@ -42,6 +46,14 @@ footer{color:var(--muted);font-size:12px;margin-top:20px;text-align:center}
 footer a{color:inherit}.err{padding:12px;color:var(--muted);font-size:13px}
 @media (max-width:760px){.tile{grid-column:1/-1!important}}
 body.embed main{padding:8px;max-width:none}
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 16px}
+.filters .f{background:var(--card);border:1px solid var(--border);border-radius:8px;
+padding:6px 10px;font-size:13px}.filters summary{cursor:pointer}
+.filters .opts{max-height:240px;overflow:auto;margin-top:6px;display:grid;gap:2px}
+.filters input[type=date]{font:inherit;color:inherit;background:transparent;border:0}
+.filters button,.filters a{font:inherit;font-size:13px;padding:6px 12px;border-radius:8px;
+border:1px solid var(--border);background:var(--card);color:inherit;text-decoration:none;
+cursor:pointer}.note{color:var(--muted);font-size:12px;margin:-4px 0 6px}
 """
 
 
@@ -61,12 +73,71 @@ def _page(title: str, body: str, *, theme: str | None, embed: bool, branding: bo
     )
 
 
-def _render_tile(svc: Services, s: Session, chart: Chart, theme: str | None) -> str:
+def _render_tile(
+    svc: Services,
+    s: Session,
+    chart: Chart,
+    theme: str | None,
+    selections: list[Selection] | None = None,
+) -> str:
     try:
-        r = svc.artifacts.render_chart(s, None, chart, theme=theme or "light")
-        return r.svg
+        r = svc.artifacts.render_chart(
+            s, None, chart, theme=theme or "light", selections=selections
+        )
     except PrismError:
         return '<div class="err">This chart is unavailable.</div>'
+    note = (
+        f'<p class="note">Not filtered by {html.escape(", ".join(r.skipped))}</p>'
+        if r.skipped
+        else ""
+    )
+    return note + r.svg
+
+
+def _filter_form(
+    svc: Services, s: Session, dash: Dashboard, selections: list[Selection], theme: str | None
+) -> str:
+    chosen = {sel.index: sel for sel in selections}
+    keep_theme = (
+        f'<input type="hidden" name="theme" value="{theme}">' if theme in ("light", "dark") else ""
+    )
+    parts = [keep_theme]
+    for i, d in enumerate(dash.filters or []):
+        try:
+            opts = svc.artifacts.filter_options(s, None, dash, i)
+        except PrismError:
+            continue
+        label = html.escape(opts["label"])
+        sel = chosen.get(i)
+        if d["kind"] == "date_range":
+            lo, hi = opts.get("min") or "", opts.get("max") or ""
+            start = sel.start.isoformat() if sel and sel.start else ""
+            end = sel.end.isoformat() if sel and sel.end else ""
+            bounds = f'min="{lo}" max="{hi}"'
+            parts.append(
+                f'<span class="f">{label} '
+                f'<input type="date" name="ff{i}" value="{start}" {bounds} '
+                f'aria-label="{label} from"> – '
+                f'<input type="date" name="ft{i}" value="{end}" {bounds} '
+                f'aria-label="{label} to"></span>'
+            )
+            continue
+        picked = set(sel.values) if sel else set()
+        boxes = "".join(
+            f'<label><input type="checkbox" name="fv{i}" value="{html.escape(v)}"'
+            f'{" checked" if v in picked else ""}> {html.escape(v)}</label>'
+            for v in opts["values"]
+        )
+        if opts.get("truncated"):
+            boxes += f'<span class="note">First {len(opts["values"])} values</span>'
+        count = f" · {len(picked)} selected" if picked else ""
+        parts.append(
+            f'<details class="f"><summary>{label}{count}</summary>'
+            f'<div class="opts">{boxes}</div></details>'
+        )
+    clear = "?theme=" + theme if theme in ("light", "dark") else "?"
+    parts.append(f'<button type="submit">Apply</button><a href="{clear}">Clear</a>')
+    return f'<form class="filters" method="get">{"".join(parts)}</form>'
 
 
 def _resolve(svc: Services, s: Session, token: str, *, embed: bool) -> Share:
@@ -78,7 +149,13 @@ def _resolve(svc: Services, s: Session, token: str, *, embed: bool) -> Share:
     return share
 
 
-def _build(svc: Services, s: Session, share: Share, theme: str | None) -> tuple[str, str]:
+def _build(
+    svc: Services,
+    s: Session,
+    share: Share,
+    theme: str | None,
+    params: list[tuple[str, str]] | None = None,
+) -> tuple[str, str]:
     ws = s.get(Workspace, share.workspace_id)
     ws_name = ws.name if ws else ""
     if share.artifact_type == "chart":
@@ -94,20 +171,23 @@ def _build(svc: Services, s: Session, share: Share, theme: str | None) -> tuple[
     dash = s.get(Dashboard, share.artifact_id)
     if dash is None:
         raise NotFound("Not found")
+    selections = parse_selections(dash.filters or [], params or [])
     tiles = []
     for t in sorted(dash.layout, key=lambda t: (t.get("y", 0), t.get("x", 0))):
         chart = s.get(Chart, t["chart_id"])
         if chart is None or chart.workspace_id != share.workspace_id:
             continue
         x, w = int(t.get("x", 0)), int(t.get("w", 6))
+        tile = _render_tile(svc, s, chart, theme, selections)
         tiles.append(
             f'<section class="tile" style="grid-column:{x + 1}/span {w}">'
-            f"<h2>{html.escape(chart.name)}</h2>{_render_tile(svc, s, chart, theme)}</section>"
+            f"<h2>{html.escape(chart.name)}</h2>{tile}</section>"
         )
+    form = _filter_form(svc, s, dash, selections, theme) if dash.filters else ""
     body = (
         f"<h1>{html.escape(dash.name)}</h1>"
         f'<p class="sub">{html.escape(dash.description or ws_name)}</p>'
-        f'<div class="grid">{"".join(tiles)}</div>'
+        f'{form}<div class="grid">{"".join(tiles)}</div>'
     )
     return dash.name, body
 
@@ -119,7 +199,7 @@ def _respond(request: Request, token: str, theme: str | None, *, embed: bool) ->
     try:
         with svc.db.transaction() as s:
             share = _resolve(svc, s, token, embed=embed)
-            title, body = _build(svc, s, share, theme)
+            title, body = _build(svc, s, share, theme, request.query_params.multi_items())
             branding = show_branding(svc, s)
     except NotFound:
         page = _page(
