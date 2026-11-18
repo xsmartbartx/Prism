@@ -138,7 +138,11 @@ export interface ViewSpec {
 }
 export interface Chart { id: string; dataset_id: string; name: string; description: string; query: QuerySpec; view: ViewSpec; owner_id: string; updated_at: string; created_at: string }
 export interface Tile { chart_id: string; x: number; y: number; w: number; h: number }
-export interface Dashboard { id: string; name: string; description: string; layout: Tile[]; updated_at: string; charts?: Record<string, Chart> }
+export interface DashboardFilter { field: string; kind: "values" | "date_range"; label: string }
+export interface Dashboard { id: string; name: string; description: string; layout: Tile[]; filters: DashboardFilter[]; updated_at: string; charts?: Record<string, Chart> }
+export interface FilterField { field: string; types: PrismType[]; charts: number; kinds: DashboardFilter["kind"][] }
+export interface FilterOptions { field: string; kind: DashboardFilter["kind"]; label: string; values?: string[]; truncated?: boolean; omitted_long?: number; min?: string | null; max?: string | null }
+export interface TileRender { svg: string; applied: string[]; skipped: string[] }
 export interface Share { id: string; artifact_type: string; artifact_id: string; created_at: string; expires_at: string | null; revoked_at: string | null; use_count: number; allow_embed: boolean; active: boolean; url?: string; embed_url?: string; token?: string }
 export interface QueryResult { columns: string[]; rows: Record<string, unknown>[]; total: number; truncated?: boolean }
 export interface AuditEvent { id: string; seq: number; timestamp: string; actor: string | null; action: string; target_type: string | null; target_id: string | null; description: string; details: Record<string, unknown>; ip: string | null }

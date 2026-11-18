@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Dashboard filters: authors add up to six filters (a list of values, or a date range) and viewers narrow every chart that has the field at once. Fields match across datasets ignoring case and spacing; a chart without the field says it is not filtered. Selections live in the page address, so links keep them, and shared dashboard links offer the same filters as a plain form with no JavaScript. Filters are bound parameters ANDed onto each chart's own query, so they can only narrow what a chart shows. Adds migration `0002` (a `filters` column on dashboards).
+
 ## 1.1.0 — 2026-11-18
 
 - Import SQLite databases (`.sqlite`, `.sqlite3`, `.db`) and Parquet files (`.parquet`). A database's tables appear in the review's table picker, and the dataset is named after the table. Both go through the same type proposal, review, versioning and refresh as spreadsheets. Uploaded databases are opened in memory, read-only and hardened: only ordinary tables are offered, nothing runs through a view or trigger, and each read has a time limit. BLOB values are skipped with a warning; Parquet nested values become JSON text and zoned timestamps become UTC.

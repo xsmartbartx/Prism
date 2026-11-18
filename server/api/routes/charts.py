@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -13,9 +13,11 @@ from server.api.deps import actor, services
 from server.api.routes.datasets import _filename
 from server.api.serializers import chart_out, dashboard_out, share_out
 from server.container import Services
+from server.errors import NotFound
 from server.services import audit
 from server.services.artifacts import parse_specs
 from server.services.context import Actor
+from server.services.dashboard_filters import MAX_FILTERS, parse_selections
 from server.services.queries import jsonable_rows
 
 router = APIRouter(prefix="/api/v1", tags=["charts"])
@@ -45,10 +47,26 @@ class Tile(BaseModel):
     h: int = 4
 
 
+class DashboardFilterIn(BaseModel):
+    field: str = Field(min_length=1, max_length=200)
+    kind: Literal["values", "date_range"] = "values"
+    label: str = Field(default="", max_length=80)
+
+
 class DashboardIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str = Field(default="", max_length=5000)
     layout: list[Tile] = Field(default_factory=list)
+    # Left out, a dashboard keeps its filters (minus fields no tile has any more).
+    filters: list[DashboardFilterIn] | None = Field(default=None, max_length=MAX_FILTERS)
+
+
+class FilterFieldsIn(BaseModel):
+    chart_ids: list[str] = Field(default_factory=list, max_length=48)
+
+
+def _filters(body: DashboardIn) -> list[dict[str, Any]] | None:
+    return None if body.filters is None else [f.model_dump() for f in body.filters]
 
 
 class ShareIn(BaseModel):
@@ -241,6 +259,7 @@ def create_dashboard(
             name=body.name,
             description=body.description,
             layout=[t.model_dump() for t in body.layout],
+            filters=_filters(body),
         )
         return dashboard_out(d)
 
@@ -275,9 +294,56 @@ def update_dashboard(
             name=body.name,
             description=body.description,
             layout=[t.model_dump() for t in body.layout],
+            filters=_filters(body),
             dashboard=existing,
         )
         return dashboard_out(d)
+
+
+@router.post("/dashboards/filter-fields")
+def dashboard_filter_fields(
+    body: FilterFieldsIn, a: Actor = Depends(actor), svc: Services = Depends(services)
+) -> list[dict[str, Any]]:
+    """Fields these charts' datasets have that a dashboard filter could use."""
+    with svc.db.transaction() as s:
+        return svc.artifacts.filter_field_summary(s, a, body.chart_ids)
+
+
+@router.get("/dashboards/{dashboard_id}/filters/{index}/options")
+def dashboard_filter_options(
+    dashboard_id: str,
+    index: int,
+    a: Actor = Depends(actor),
+    svc: Services = Depends(services),
+) -> dict[str, Any]:
+    """Distinct values (or the date span) a viewer can pick for one filter."""
+    with svc.db.transaction() as s:
+        d = svc.artifacts.get_dashboard(s, a, dashboard_id)
+        return svc.artifacts.filter_options(s, a, d, index)
+
+
+@router.get("/dashboards/{dashboard_id}/charts/{chart_id}/render")
+def render_dashboard_chart(
+    dashboard_id: str,
+    chart_id: str,
+    request: Request,
+    theme: str | None = Query(default=None, pattern="^(light|dark)$"),
+    width: int | None = Query(default=None, ge=200, le=4000),
+    height: int | None = Query(default=None, ge=100, le=4000),
+    a: Actor = Depends(actor),
+    svc: Services = Depends(services),
+) -> dict[str, Any]:
+    """One tile, narrowed by the dashboard filters in the query string (fv0=…, ff1=…, ft1=…)."""
+    with svc.db.transaction() as s:
+        d = svc.artifacts.get_dashboard(s, a, dashboard_id)
+        if chart_id not in {t.get("chart_id") for t in d.layout}:
+            raise NotFound("Chart is not on this dashboard")
+        chart = svc.artifacts.get_chart(s, a, chart_id)
+        selections = parse_selections(d.filters or [], request.query_params.multi_items())
+        r = svc.artifacts.render_chart(
+            s, a, chart, theme=theme, width=width, height=height, selections=selections
+        )
+    return {"svg": r.svg, "applied": list(r.applied), "skipped": list(r.skipped)}
 
 
 @router.delete("/dashboards/{dashboard_id}", status_code=204)

@@ -300,6 +300,8 @@ class Dashboard(Base):
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="")
     layout: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    # Viewer filters shared by the tiles: [{field, kind: values|date_range, label}]
+    filters: Mapped[list[Any]] = mapped_column(JSON, default=list, server_default="[]")
     owner_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = _ts()
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)

@@ -1,20 +1,44 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowDown, ArrowUp, Check, Pencil, Plus, Share2, Trash2, X } from "lucide-react";
-import { can, del, get, getText, put, type Chart, type Dashboard, type Tile } from "../api";
+import { can, del, get, getText, put, type Chart, type Dashboard, type DashboardFilter, type Tile, type TileRender } from "../api";
 import { effectiveTheme, useApp, useLoad } from "../app-state";
+import { FilterBar, FilterEditor, filterQuery } from "../components/DashboardFilters";
 import ShareDialog from "../components/ShareDialog";
 import { ChartSvg, Confirm, Empty, ErrorBox, Modal, PageLoading } from "../components/ui";
 
-function TileChart({ id, theme }: { id: string; theme: string }) {
+/**
+ * One tile. A saved tile renders through the dashboard, so the viewer's filters narrow it;
+ * a tile just added in the editor (not saved yet) renders on its own.
+ */
+function TileChart({ dashboardId, id, theme, query, live }: { dashboardId: string; id: string; theme: string; query: string; live: boolean }) {
   const [svg, setSvg] = useState<string | null>(null);
+  const [skipped, setSkipped] = useState<string[]>([]);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
+    // Selections can change faster than tiles render: only the latest request may update the tile.
+    let current = true;
     setSvg(null);
-    getText(`/api/v1/charts/${id}/render${theme ? `?theme=${theme}` : ""}`).then(setSvg).catch((e) => setErr(e.message));
-  }, [id, theme]);
+    setErr(null);
+    if (live) {
+      get<TileRender>(`/api/v1/dashboards/${dashboardId}/charts/${id}/render?theme=${theme}${query}`)
+        .then((r) => { if (current) { setSvg(r.svg); setSkipped(r.skipped); } })
+        .catch((e) => { if (current) setErr(e.message); });
+    } else {
+      setSkipped([]);
+      getText(`/api/v1/charts/${id}/render?theme=${theme}`)
+        .then((svg) => { if (current) setSvg(svg); })
+        .catch((e) => { if (current) setErr(e.message); });
+    }
+    return () => { current = false; };
+  }, [dashboardId, id, theme, query, live]);
   if (err) return <div className="muted small">{err}</div>;
-  return <ChartSvg svg={svg} minHeight={220} />;
+  return (
+    <>
+      {skipped.length > 0 && <p className="tile-note">Not filtered by {skipped.join(", ")}: this chart's data has no such field.</p>}
+      <ChartSvg svg={svg} minHeight={220} />
+    </>
+  );
 }
 
 export default function DashboardView() {
@@ -27,18 +51,21 @@ export default function DashboardView() {
   const [layout, setLayout] = useState<Tile[]>([]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [filters, setFilters] = useState<DashboardFilter[]>([]);
   const [adding, setAdding] = useState(false);
   const [share, setShare] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [charts, setCharts] = useState<Record<string, Chart>>({});
   const editable = can.explore(me?.role);
   const t = effectiveTheme(theme);
+  const fq = filterQuery(params);
 
   useEffect(() => {
     if (!data) return;
     setLayout([...data.layout].sort((a, b) => a.y - b.y || a.x - b.x));
     setName(data.name);
     setDescription(data.description);
+    setFilters(data.filters ?? []);
     setCharts(data.charts ?? {});
   }, [data]);
 
@@ -55,7 +82,7 @@ export default function DashboardView() {
       return out;
     });
     try {
-      const saved = await put<Dashboard>(`/api/v1/dashboards/${id}`, { name, description, layout: flowed });
+      const saved = await put<Dashboard>(`/api/v1/dashboards/${id}`, { name, description, layout: flowed, filters: filters.map((f) => ({ ...f, label: f.label.trim() || f.field })) });
       setData({ ...saved, charts });
       setEdit(false);
       setParams({});
@@ -108,6 +135,16 @@ export default function DashboardView() {
         </div>
       </div>
 
+      {edit ? (
+        <div style={{ marginBottom: 16 }}>
+          <FilterEditor chartIds={layout.map((x) => x.chart_id)} filters={filters} onChange={setFilters} />
+        </div>
+      ) : (
+        data.filters.length > 0 && layout.length > 0 && (
+          <FilterBar dashboardId={data.id} filters={data.filters} params={params} setParams={setParams} />
+        )
+      )}
+
       {layout.length === 0 ? (
         <div className="card">
           <Empty icon={<Plus size={22} />} title="This dashboard is empty" action={editable && <button className="btn btn-primary" onClick={() => { setEdit(true); setAdding(true); }}><Plus size={16} /> Add a chart</button>}>
@@ -133,7 +170,10 @@ export default function DashboardView() {
                     </div>
                   )}
                 </div>
-                <div className="tile-body"><TileChart id={tile.chart_id} theme={t} /></div>
+                <div className="tile-body">
+                  <TileChart dashboardId={data.id} id={tile.chart_id} theme={t} query={edit ? "" : fq}
+                    live={!edit && data.layout.some((x) => x.chart_id === tile.chart_id)} />
+                </div>
               </div>
             );
           })}
