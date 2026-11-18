@@ -119,9 +119,11 @@ def parse_selections(
     starts: dict[int, str] = {}
     ends: dict[int, str] = {}
     for key, value in params:
-        if len(key) < 3 or key[:2] not in ("fv", "ff", "ft") or not key[2:].isdigit():
+        suffix = key[2:]
+        # ASCII digits only: str.isdigit() also accepts characters like "²" that int() rejects.
+        if key[:2] not in ("fv", "ff", "ft") or not (suffix.isascii() and suffix.isdigit()):
             continue
-        i = int(key[2:])
+        i = int(suffix)
         if i >= len(definitions):
             continue
         if key.startswith("fv"):

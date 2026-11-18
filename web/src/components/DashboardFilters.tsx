@@ -57,7 +57,12 @@ function useOptions(dashboardId: string, index: number, enabled: boolean) {
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (!enabled || opts) return;
-    get<FilterOptions>(`/api/v1/dashboards/${dashboardId}/filters/${index}/options`).then(setOpts).catch((e) => setError(e.message));
+    let current = true; // a closed picker or a newer request makes this response stale
+    setError(null);
+    get<FilterOptions>(`/api/v1/dashboards/${dashboardId}/filters/${index}/options`)
+      .then((o) => { if (current) { setError(null); setOpts(o); } })
+      .catch((e) => { if (current) setError(e.message); });
+    return () => { current = false; };
   }, [dashboardId, index, enabled, opts]);
   return { opts, error };
 }
@@ -79,7 +84,13 @@ function ValuePicker({ dashboardId, index, filter, params, update }: ControlProp
     return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc); };
   }, [open]);
 
-  const shown = useMemo(() => (opts?.values ?? []).filter((v) => v.toLowerCase().includes(q.toLowerCase())), [opts, q]);
+  // Selected values stay listed even when they are not among the offered ones, so they can be unticked.
+  const shown = useMemo(() => {
+    const offered = opts?.values ?? [];
+    const all = [...selected.filter((v) => !offered.includes(v)), ...offered];
+    return all.filter((v) => v.toLowerCase().includes(q.toLowerCase()));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opts, q, selected.join("\u0000")]);
   const toggle = (v: string) => update((p) => {
     const cur = p.getAll(key);
     p.delete(key);
@@ -112,6 +123,7 @@ function ValuePicker({ dashboardId, index, filter, params, update }: ControlProp
                 {shown.length === 0 && <div className="muted small">No values</div>}
               </div>
               {opts.truncated && <div className="muted small">Showing the first {opts.values?.length} values</div>}
+              {(opts.omitted_long ?? 0) > 0 && <div className="muted small">Some values are too long to filter by</div>}
               {selected.length > 0 && (
                 <button className="btn btn-ghost btn-sm" onClick={() => update((p) => p.delete(key))}>Clear {filter.label}</button>
               )}
@@ -149,7 +161,11 @@ export function FilterEditor({ chartIds, filters, onChange }: {
   const idsKey = chartIds.join(",");
   useEffect(() => {
     if (!chartIds.length) { setFields([]); return; }
-    post<FilterField[]>("/api/v1/dashboards/filter-fields", { chart_ids: chartIds }).then(setFields).catch(() => setFields([]));
+    let current = true; // a newer layout makes this response stale
+    post<FilterField[]>("/api/v1/dashboards/filter-fields", { chart_ids: chartIds })
+      .then((f) => { if (current) setFields(f); })
+      .catch(() => { if (current) setFields([]); });
+    return () => { current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idsKey]);
 

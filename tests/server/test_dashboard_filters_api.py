@@ -131,3 +131,86 @@ def test_share_page_filters_without_javascript(client: TestClient) -> None:
 
     # Junk parameters never break the page.
     assert anon.get(f"/s/{share['token']}?fv0=&ff1=soon&fv99=x").status_code == 200
+
+
+def _csv_dataset(c: TestClient, name: str, raw: bytes) -> str:
+    imp = c.post("/api/v1/imports", files={"file": (f"{name}.csv", raw, "text/csv")}, headers=H).json()
+    p = imp["proposal"]
+    body = {
+        "dataset_name": name,
+        "header_row": p["header_row"],
+        "data_start_row": p["data_start_row"],
+        "columns": [{k: col[k] for k in ("index", "source_name", "name", "type", "role")} for col in p["columns"]],
+    }
+    r = c.post(f"/api/v1/imports/{imp['id']}/commit", json=body, headers=H)
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
+def _bar(c: TestClient, ds: str, x: str, y: str, filters: list[dict[str, Any]] | None = None) -> str:
+    body = {
+        "dataset_id": ds,
+        "name": f"{x} chart",
+        "query": {"dimensions": [x], "measures": [{"column": y, "function": "count"}], "filters": filters or []},
+        "view": {"mark": "bar", "encodings": [{"channel": "x", "field": x}, {"channel": "y", "field": y}]},
+    }
+    r = c.post("/api/v1/charts", json=body, headers=H)
+    assert r.status_code == 201, r.text
+    return str(r.json()["id"])
+
+
+def _dash(c: TestClient, charts: list[str], filters: list[dict[str, str]]) -> str:
+    r = c.post("/api/v1/dashboards", json={"name": "D", "layout": [{"chart_id": x} for x in charts], "filters": filters}, headers=H)
+    assert r.status_code == 201, r.text
+    return str(r.json()["id"])
+
+
+def test_options_respect_each_charts_own_filters(client: TestClient) -> None:
+    setup_admin(client)
+    sales = import_sales(client)["id"]
+    eu_only = _bar(client, sales, "Region", "Order ID", [{"column": "Region", "operator": "in", "value": ["EU"]}])
+    did = _dash(client, [eu_only], [{"field": "Order ID"}, {"field": "Region"}])
+    ids = client.get(f"/api/v1/dashboards/{did}/filters/0/options").json()["values"]
+    assert ids == ["A-1001", "A-1003", "A-1006"]  # never the US or APAC orders the chart excludes
+    assert client.get(f"/api/v1/dashboards/{did}/filters/1/options").json()["values"] == ["EU"]
+    # A second, unfiltered chart over the same dataset widens the options (union).
+    every = _bar(client, sales, "Region", "Order ID")
+    did2 = _dash(client, [eu_only, every], [{"field": "Region"}])
+    assert client.get(f"/api/v1/dashboards/{did2}/filters/0/options").json()["values"] == ["APAC", "EU", "US"]
+
+
+def test_options_edge_cases(client: TestClient) -> None:
+    setup_admin(client)
+    named_n = _csv_dataset(client, "N", b"n,k\nalpha,10\nbeta,20\ngamma,30\n")
+    did = _dash(client, [_bar(client, named_n, "n", "k")], [{"field": "n"}])
+    assert client.get(f"/api/v1/dashboards/{did}/filters/0/options").json()["values"] == ["alpha", "beta", "gamma"]
+
+    bools = _csv_dataset(client, "B", b"flag,k\ntrue,1\nfalse,2\ntrue,3\n")
+    ints = _csv_dataset(client, "I", b"flag,k\n1,1\n0,2\n2,3\n")
+    did = _dash(client, [_bar(client, bools, "flag", "k"), _bar(client, ints, "flag", "k")], [{"field": "flag"}])
+    assert sorted(client.get(f"/api/v1/dashboards/{did}/filters/0/options").json()["values"]) == ["0", "1", "2", "false", "true"]
+
+    long_value = "L" * 250
+    texts = _csv_dataset(client, "T", f"note,k\nshort,1\n{long_value},2\n".encode())
+    did = _dash(client, [_bar(client, texts, "note", "k")], [{"field": "note"}])
+    opts = client.get(f"/api/v1/dashboards/{did}/filters/0/options").json()
+    assert opts["values"] == ["short"] and opts["omitted_long"] == 1
+
+
+def test_layout_save_drops_filters_that_no_longer_fit(client: TestClient) -> None:
+    setup_admin(client)
+    sales = import_sales(client)["id"]
+    text_dates = _csv_dataset(client, "Q", b"Order Date,k\nQ1,1\nQ2,2\n")
+    a, t = _bar(client, sales, "Order Date", "Order ID"), _bar(client, text_dates, "Order Date", "k")
+    did = _dash(client, [a, t], [{"field": "Order Date", "kind": "date_range"}])
+    r = client.put(f"/api/v1/dashboards/{did}", json={"name": "D", "layout": [{"chart_id": t}]}, headers=H)
+    assert r.status_code == 200, r.text
+    assert r.json()["filters"] == []  # only a text "Order Date" is left, so the range goes
+
+
+def test_share_form_keeps_saved_selections(client: TestClient) -> None:
+    _, _, dash = _setup(client)
+    share = client.post("/api/v1/shares", json={"artifact_type": "dashboard", "artifact_id": dash["id"]}, headers=H).json()
+    page = TestClient(client.app).get(f"/s/{share['token']}?fv0=Mars&ff1=2025-12-01&ft1=2026-09-30").text
+    assert 'value="Mars" checked' in page  # not an option any more, still submitted on Apply
+    assert 'min="2025-12-01"' in page and 'max="2026-09-30"' in page  # the inputs stay valid

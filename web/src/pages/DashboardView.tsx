@@ -16,16 +16,21 @@ function TileChart({ dashboardId, id, theme, query, live }: { dashboardId: strin
   const [skipped, setSkipped] = useState<string[]>([]);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
+    // Selections can change faster than tiles render: only the latest request may update the tile.
+    let current = true;
     setSvg(null);
     setErr(null);
     if (live) {
       get<TileRender>(`/api/v1/dashboards/${dashboardId}/charts/${id}/render?theme=${theme}${query}`)
-        .then((r) => { setSvg(r.svg); setSkipped(r.skipped); })
-        .catch((e) => setErr(e.message));
+        .then((r) => { if (current) { setSvg(r.svg); setSkipped(r.skipped); } })
+        .catch((e) => { if (current) setErr(e.message); });
     } else {
       setSkipped([]);
-      getText(`/api/v1/charts/${id}/render?theme=${theme}`).then(setSvg).catch((e) => setErr(e.message));
+      getText(`/api/v1/charts/${id}/render?theme=${theme}`)
+        .then((svg) => { if (current) setSvg(svg); })
+        .catch((e) => { if (current) setErr(e.message); });
     }
+    return () => { current = false; };
   }, [dashboardId, id, theme, query, live]);
   if (err) return <div className="muted small">{err}</div>;
   return (

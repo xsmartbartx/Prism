@@ -110,9 +110,12 @@ def _filter_form(
         label = html.escape(opts["label"])
         sel = chosen.get(i)
         if d["kind"] == "date_range":
-            lo, hi = opts.get("min") or "", opts.get("max") or ""
             start = sel.start.isoformat() if sel and sel.start else ""
             end = sel.end.isoformat() if sel and sel.end else ""
+            # Widen the data's span to cover a saved selection, or the browser would refuse to
+            # submit the form (an out-of-range date input is invalid) after a data refresh.
+            lo = min(x for x in (opts.get("min"), start, end) if x) if opts.get("min") else ""
+            hi = max(x for x in (opts.get("max"), start, end) if x) if opts.get("max") else ""
             bounds = f'min="{lo}" max="{hi}"'
             parts.append(
                 f'<span class="f">{label} '
@@ -122,14 +125,20 @@ def _filter_form(
                 f'aria-label="{label} to"></span>'
             )
             continue
-        picked = set(sel.values) if sel else set()
+        picked = list(sel.values) if sel else []
+        # Selected values come first even when they are not among the offered ones (beyond
+        # the first 200, or gone after a refresh): a form only submits what it renders, so
+        # leaving them out would drop them silently on the next Apply.
+        shown = picked + [v for v in opts["values"] if v not in picked]
         boxes = "".join(
             f'<label><input type="checkbox" name="fv{i}" value="{html.escape(v)}"'
             f'{" checked" if v in picked else ""}> {html.escape(v)}</label>'
-            for v in opts["values"]
+            for v in shown
         )
         if opts.get("truncated"):
             boxes += f'<span class="note">First {len(opts["values"])} values</span>'
+        if opts.get("omitted_long"):
+            boxes += '<span class="note">Some values are too long to filter by</span>'
         count = f" · {len(picked)} selected" if picked else ""
         parts.append(
             f'<details class="f"><summary>{label}{count}</summary>'

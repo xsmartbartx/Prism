@@ -124,3 +124,8 @@ class TestApply:
         sel = parse_selections([{"field": "Year", "kind": "values"}], [("fv0", "2026"), ("fv0", "next")])
         spec, applied, _ = apply_selections(QuerySpec(), {"Year": "integer"}, sel)
         assert applied == ["Year"] and spec.filters[0].value == ["2026"]
+
+
+def test_non_ascii_digit_indices_are_ignored() -> None:
+    sel = parse_selections(DEFS, [("fv²", "x"), ("ff٣", "2026-01-01"), ("fv0", "EU")])
+    assert [(s.field, s.values) for s in sel] == [("Region", ("EU",))]

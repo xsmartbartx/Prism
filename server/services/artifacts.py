@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import secrets
 from dataclasses import dataclass
 from datetime import timedelta
@@ -14,7 +15,7 @@ from sqlalchemy.orm import Session
 from core.clock import utcnow
 from data.load.store import DatasetStore
 from data.query import QuerySpec
-from data.query.spec import AggFunction, AggregationSpec, SortSpec
+from data.query.spec import AggFunction, AggregationSpec, FilterSpec, SortSpec
 from presentation.render.svg_renderer import SvgRenderer
 from presentation.spec.view_spec import ViewSpec, validate_view
 from server.db.models import (
@@ -30,6 +31,7 @@ from server.services import audit
 from server.services.auth import sha256
 from server.services.context import Actor
 from server.services.dashboard_filters import (
+    MAX_VALUE_CHARS,
     VALUE_LIMIT,
     VALUE_TYPES,
     Selection,
@@ -392,8 +394,9 @@ class ArtifactService:
         """Create or update a dashboard.
 
         ``filters`` replaces the dashboard's filters and must name fields its tiles have.
-        Left out (None), the existing filters are kept, minus any whose field no tile has
-        any more (a removed chart takes its fields with it).
+        Left out (None), the existing filters are kept, minus any that no longer fit the
+        tiles (a removed chart takes its fields with it, or leaves a field of another type):
+        a layout change never fails over filters the caller did not send.
         """
         actor.require("explore")
         clean = self._clean_layout(s, actor, layout)
@@ -401,10 +404,12 @@ class ArtifactService:
         if filters is not None:
             clean_filters = clean_definitions(filters, fields)
         else:
-            existing = (dashboard.filters if dashboard else None) or []
-            keys = {field_key(n) for n in fields}
-            kept = [f for f in existing if field_key(f["field"]) in keys]
-            clean_filters = clean_definitions(kept, fields)
+            clean_filters = []
+            for f in (dashboard.filters if dashboard else None) or []:
+                try:
+                    clean_filters += clean_definitions([*clean_filters, f], fields)[-1:]
+                except BadRequest:
+                    continue
         if dashboard is None:
             dashboard = Dashboard(
                 workspace_id=actor.workspace_id,
@@ -502,30 +507,46 @@ class ArtifactService:
     def filter_options(
         self, s: Session, actor: Actor | None, dashboard: Dashboard, index: int
     ) -> dict[str, Any]:
-        """What a viewer can pick for one filter: distinct values, or a date span."""
+        """What a viewer can pick for one filter: distinct values, or a date span.
+
+        Values come only from rows the tiles themselves aggregate: each tile's own filters
+        are part of its options query. A share page is anonymous, so a picker must not reveal
+        values from rows a shared chart deliberately leaves out. Tiles over the same dataset
+        with the same filters are queried once; different filters are queried separately and
+        their results merged.
+        """
         definitions = dashboard.filters or []
         if not 0 <= index < len(definitions):
             raise NotFound("Filter not found")
         d = definitions[index]
         field, kind = d["field"], d["kind"]
         out: dict[str, Any] = {"field": field, "kind": kind, "label": d.get("label") or field}
-        sources: list[tuple[TileSource, str]] = []
-        seen_datasets: set[str] = set()
+        sources: list[tuple[TileSource, str, list[FilterSpec]]] = []
+        seen: set[tuple[str, str]] = set()
         for src in self.tile_sources(s, dashboard.workspace_id, dashboard.layout):
             column = resolve_column(field, src.column_types)
-            if column is not None and src.dataset.id not in seen_datasets:
-                seen_datasets.add(src.dataset.id)
-                sources.append((src, column))
+            if column is None:
+                continue
+            own, _ = parse_specs(src.chart.query_spec, src.chart.view_spec)
+            key = (
+                src.dataset.id,
+                json.dumps([f.model_dump(mode="json") for f in own.filters], sort_keys=True),
+            )
+            if key not in seen:
+                seen.add(key)
+                sources.append((src, column, list(own.filters)))
+
         if kind == "date_range":
             lows, highs = [], []
-            for src, column in sources:
+            for src, column, own_filters in sources:
                 if src.column_types[column] != "date":
                     continue
                 q = QuerySpec(
                     measures=[
                         AggregationSpec(column=column, function=AggFunction.MIN, alias="lo"),
                         AggregationSpec(column=column, function=AggFunction.MAX, alias="hi"),
-                    ]
+                    ],
+                    filters=own_filters,
                 )
                 row = self.queries.run(s, actor, src.dataset, q).result.rows[0]
                 if row.get("lo") is not None:
@@ -535,21 +556,35 @@ class ArtifactService:
             out["max"] = max(highs).isoformat() if highs else None
             return out
 
-        values: set[Any] = set()
+        # Keyed by the text a selection sends back, so True and 1 stay two options.
+        options: dict[str, tuple[str, Any]] = {}
         truncated = False
-        for src, column in sources:
+        too_long = 0
+        for src, column, own_filters in sources:
+            # The count only makes this a grouped query; name it apart from the field.
+            alias = "__count" if column != "__count" else "__count_"
             q = QuerySpec(
                 dimensions=[column],
-                measures=[AggregationSpec(column="*", function=AggFunction.COUNT, alias="n")],
+                measures=[AggregationSpec(column="*", function=AggFunction.COUNT, alias=alias)],
+                filters=own_filters,
                 sort=[SortSpec(column=column)],
                 limit=VALUE_LIMIT + 1,
             )
             rows = self.queries.run(s, actor, src.dataset, q).result.rows
             truncated |= len(rows) > VALUE_LIMIT
-            values.update(r[column] for r in rows[:VALUE_LIMIT] if r[column] is not None)
-        ordered = sorted(values, key=lambda v: (type(v).__name__, v))
+            for r in rows[:VALUE_LIMIT]:
+                v = r[column]
+                if v is None:
+                    continue
+                text = _option_text(v)
+                if len(text.strip()) > MAX_VALUE_CHARS:
+                    too_long += 1  # a selection that long is not accepted, so do not offer it
+                    continue
+                options.setdefault(text, (type(v).__name__, v))
+        ordered = sorted(options, key=lambda t: options[t])
         out["truncated"] = truncated or len(ordered) > VALUE_LIMIT
-        out["values"] = [_option_text(v) for v in ordered[:VALUE_LIMIT]]
+        out["values"] = ordered[:VALUE_LIMIT]
+        out["omitted_long"] = too_long
         return out
 
     def delete_dashboard(self, s: Session, actor: Actor, dashboard: Dashboard) -> None:
