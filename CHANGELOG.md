@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0 — 2026-11-18
 
 - Import from a link: paste an `https://` link to a CSV, Excel, Parquet or SQLite file (a published Google Sheet, a raw GitHub file, an export URL) and Prism downloads it into the usual review. The dataset remembers the link: **Refresh now** downloads it again, and a schedule (every hour, day or week; Pro and Business) keeps it current. An unchanged file (`304 Not Modified`, or identical bytes) makes no new version; a changed one goes through the same contract and drift checks as an upload. Failures are shown on the dataset and audited, and a schedule pauses after five in a row or when its owner loses access.
 - Downloads are protected against server-side request forgery: https only, every address of every hop (redirects included) must be public, the connection is pinned to the checked address with TLS verified for the host name, plus size and time limits. `PRISM_LINK_ALLOW_PRIVATE` opts in to intranet addresses; loopback and cloud metadata addresses are always refused. `PRISM_LINK_IMPORTS=false` turns the feature off.
