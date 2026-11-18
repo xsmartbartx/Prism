@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.0 — 2026-11-18
 
 - Dashboard filters: authors add up to six filters (a list of values, or a date range) and viewers narrow every chart that has the field at once. Fields match across datasets ignoring case and spacing; a chart without the field says it is not filtered. Selections live in the page address, so links keep them, and shared dashboard links offer the same filters as a plain form with no JavaScript. Filters are bound parameters ANDed onto each chart's own query, so they can only narrow what a chart shows. Adds migration `0002` (a `filters` column on dashboards).
 
