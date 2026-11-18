@@ -97,7 +97,11 @@ class ImportService:
     # Upload
     # ------------------------------------------------------------------
 
-    def create(self, s: Session, actor: Actor, filename: str, data: bytes) -> Import:
+    def create(
+        self, s: Session, actor: Actor, filename: str, data: bytes, *, store: bool = True
+    ) -> Import:
+        """Register an upload. ``store=False`` keeps the bytes in memory only (link refreshes,
+        which load at once and never need the file again)."""
         actor.require("author")
         name = safe_filename(filename)
         ext = Path(name).suffix.lower()
@@ -116,10 +120,12 @@ class ImportService:
             raise BadRequest("File is not a valid Parquet file")
 
         imp_id = new_id()
-        folder = self.settings.uploads_dir / actor.workspace_id / imp_id
-        folder.mkdir(parents=True, exist_ok=True)
-        path = folder / f"source{ext}"
-        path.write_bytes(data)
+        path: Path | str = ""
+        if store:
+            folder = self.settings.uploads_dir / actor.workspace_id / imp_id
+            folder.mkdir(parents=True, exist_ok=True)
+            path = folder / f"source{ext}"
+            path.write_bytes(data)
         imp = Import(
             id=imp_id,
             workspace_id=actor.workspace_id,
@@ -327,12 +333,29 @@ class ImportService:
         )
         imp.status = ImportStatus.LOADED.value
         imp.dataset_id = dataset.id
+        from server.services.links import attach, forget_validators
+
+        if imp.source_url:
+            attach(s, actor, dataset, imp.source_url)
+        else:
+            forget_validators(s, dataset.id)  # an upload replaced a linked dataset's version
         return loaded
 
     def refresh(
-        self, s: Session, actor: Actor, dataset: Dataset, filename: str, data: bytes
+        self,
+        s: Session,
+        actor: Actor,
+        dataset: Dataset,
+        filename: str,
+        data: bytes,
+        *,
+        source_url: str | None = None,
+        store: bool = True,
     ) -> LoadedVersion:
-        """Load a new file against the dataset's current binding (new version)."""
+        """Load a new file against the dataset's current binding (new version).
+
+        ``source_url`` is the link the bytes came from; None means an upload.
+        """
         actor.require("author")
         binding_row = s.scalars(
             select(Binding).where(Binding.dataset_id == dataset.id).order_by(Binding.version.desc())
@@ -341,7 +364,8 @@ class ImportService:
             raise BadRequest("Dataset has no binding to refresh against")
         binding = SourceBinding.model_validate(binding_row.document)
         expected_kind = next(k for k, c in KIND_CONNECTOR.items() if c == binding.connector_type)
-        imp = self.create(s, actor, filename, data)
+        imp = self.create(s, actor, filename, data, store=store)
+        imp.source_url = source_url
         if imp.file_kind != expected_kind:
             raise BadRequest(f"This dataset is refreshed from {KIND_LABEL[expected_kind]} files")
         header_present = any(c.source_name for c in binding.columns)
@@ -373,6 +397,10 @@ class ImportService:
             raise
         imp.status = ImportStatus.LOADED.value
         imp.dataset_id = dataset.id
+        if source_url is None:
+            from server.services.links import forget_validators
+
+            forget_validators(s, dataset.id)
         return loaded
 
     # ------------------------------------------------------------------

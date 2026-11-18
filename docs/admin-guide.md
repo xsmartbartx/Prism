@@ -41,6 +41,19 @@ Stewards mark datasets **Certified** (requires a description) or **Deprecated**.
 
 Need more seats? Contact your vendor with your instance ID.
 
+## Links and scheduled refresh
+
+Authors can import a dataset from an `https://` link and refresh it from that link on a schedule (Pro and Business). The Prism process checks every 30 seconds for refreshes that are due and runs them with the access of the author who set the schedule. Server settings:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `PRISM_LINK_IMPORTS` | `true` | `false` turns off importing and refreshing from links (and the scheduler) |
+| `PRISM_LINK_ALLOW_PRIVATE` | `false` | `true` lets links reach private network addresses, e.g. an intranet file server. Loopback and cloud metadata addresses stay refused |
+| `PRISM_LINK_TIMEOUT_S` | `60` | Time limit for one download, redirects included |
+| `PRISM_SCHEDULER` | `true` | `false` stops this process running scheduled refreshes (for example on a second replica sharing the database; schedules are leased, so running it on several is also safe) |
+
+Each failed refresh is in the audit log (`dataset.refresh_failed`, or `dataset.drift` when the columns changed). See [Security → Links](security.md#links) for how downloads are protected.
+
 ## API keys
 
 **API keys** (explorers and above, Pro/Business) create personal keys that act as the user in the current workspace. They're shown once and stored hashed. Admins see and can revoke all keys in the workspace.

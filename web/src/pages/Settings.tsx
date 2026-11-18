@@ -282,7 +282,7 @@ export function License() {
               );
             })}
           </div>
-          <div className="row small">{["embed", "api", "white_label"].map((f) => <span key={f} className={`badge ${data.plan.features.includes(f) ? "badge-success" : ""}`}>{data.plan.features.includes(f) ? <CheckCircle2 size={12} /> : null}{{ embed: "Embedding", api: "API keys", white_label: "No Prism branding" }[f]}</span>)}</div>
+          <div className="row small">{["embed", "api", "white_label", "scheduled_refresh"].map((f) => <span key={f} className={`badge ${data.plan.features.includes(f) ? "badge-success" : ""}`}>{data.plan.features.includes(f) ? <CheckCircle2 size={12} /> : null}{{ embed: "Embedding", api: "API keys", white_label: "No Prism branding", scheduled_refresh: "Scheduled refresh" }[f]}</span>)}</div>
         </div>
         <div className="card card-pad stack">
           <h2>License key</h2>

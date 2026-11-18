@@ -60,6 +60,9 @@ def new_id() -> str:
     return uuid.uuid4().hex
 
 
+DATASET_FK = "datasets.id"
+
+
 class Base(DeclarativeBase):
     type_annotation_map = {dict[str, Any]: JSON, list[Any]: JSON}
 
@@ -205,6 +208,8 @@ class Import(Base):
     proposal: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     dataset_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Set when the file was downloaded from a link rather than uploaded.
+    source_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     created_at: Mapped[datetime] = _ts()
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
 
@@ -232,6 +237,42 @@ class Dataset(Base):
     )
 
 
+class RefreshSchedule(str, Enum):
+    MANUAL = "manual"
+    HOURLY = "hourly"
+    DAILY = "daily"
+    WEEKLY = "weekly"
+
+
+class DatasetLink(Base):
+    """The link a dataset is refreshed from, and its refresh schedule (at most one per dataset)."""
+
+    __tablename__ = "dataset_links"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
+    dataset_id: Mapped[str] = mapped_column(
+        ForeignKey(DATASET_FK, ondelete="CASCADE"), unique=True
+    )
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    url: Mapped[str] = mapped_column(String(2000))
+    schedule: Mapped[str] = mapped_column(String(10), default=RefreshSchedule.MANUAL.value)
+    # Scheduled refreshes run with this person's access; changing the schedule takes it over.
+    owner_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    next_run_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True, index=True)
+    lease_until: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    lease_token: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    last_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    failures: Mapped[int] = mapped_column(Integer, default=0)
+    etag: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    last_modified: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = _ts()
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
+
+
 class Binding(Base):
     """A published, immutable source-binding document version."""
 
@@ -239,7 +280,7 @@ class Binding(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     dataset_id: Mapped[str] = mapped_column(
-        ForeignKey("datasets.id", ondelete="CASCADE"), index=True
+        ForeignKey(DATASET_FK, ondelete="CASCADE"), index=True
     )
     version: Mapped[int] = mapped_column(Integer)
     document: Mapped[dict[str, Any]] = mapped_column(JSON)
@@ -253,7 +294,7 @@ class DatasetVersion(Base):
     __table_args__ = (UniqueConstraint("dataset_id", "version"),)
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
-    dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"))
+    dataset_id: Mapped[str] = mapped_column(ForeignKey(DATASET_FK, ondelete="CASCADE"))
     version: Mapped[int] = mapped_column(Integer)
     binding_id: Mapped[str] = mapped_column(String(32))
     import_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -279,7 +320,7 @@ class Chart(Base):
         ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
     )
     dataset_id: Mapped[str] = mapped_column(
-        ForeignKey("datasets.id", ondelete="CASCADE"), index=True
+        ForeignKey(DATASET_FK, ondelete="CASCADE"), index=True
     )
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="")

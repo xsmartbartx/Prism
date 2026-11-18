@@ -4,6 +4,7 @@ import { Database, Search, Sparkles } from "lucide-react";
 import { can, post, type Dataset, type ImportRec } from "../api";
 import { useApp, useLoad } from "../app-state";
 import Dropzone from "../components/Dropzone";
+import { LinkForm } from "../components/SourceLink";
 import { Empty, ErrorBox, PageLoading, StatusBadge, fmtNum, timeAgo } from "../components/ui";
 
 export async function uploadFile(file: File): Promise<ImportRec> {
@@ -24,6 +25,18 @@ export default function Datasets() {
     setBusy(true);
     try {
       const imp = await uploadFile(f);
+      nav(`/imports/${imp.id}`);
+    } catch (e) {
+      toast((e as Error).message, "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onLink = async (url: string) => {
+    setBusy(true);
+    try {
+      const imp = await post<ImportRec>("/api/v1/imports/link", { url });
       nav(`/imports/${imp.id}`);
     } catch (e) {
       toast((e as Error).message, "error");
@@ -63,6 +76,10 @@ export default function Datasets() {
       {author && (
         <div style={{ marginBottom: 20 }}>
           <Dropzone onFile={onFile} busy={busy} compact={!!data?.length} />
+          <LinkForm onSubmit={onLink} busy={busy} label="Import from link" placeholder="Or paste a link to a CSV, Excel, Parquet or SQLite file (https://…)" />
+          <p className="muted small" style={{ margin: "6px 0 0 24px" }}>
+            Prism downloads the file and can refresh the dataset from the same link later. For a Google Sheet, use File → Share → Publish to web → CSV.
+          </p>
         </div>
       )}
 

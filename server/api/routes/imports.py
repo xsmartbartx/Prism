@@ -5,12 +5,14 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, UploadFile
+from pydantic import BaseModel, Field
 
 from server.api.deps import actor, services
 from server.api.serializers import dataset_out, import_out, version_out
 from server.container import Services
 from server.errors import BadRequest
 from server.schemas import CommitImport, ReproposeImport
+from server.services import links
 from server.services.context import Actor
 
 router = APIRouter(prefix="/api/v1/imports", tags=["imports"])
@@ -42,6 +44,20 @@ async def upload(
         require_feature(svc, s, "upload_size", current=len(data))
         imp = svc.imports.create(s, a, file.filename or "upload.csv", data)
         return import_out(imp)
+
+
+class LinkImport(BaseModel):
+    url: str = Field(min_length=1, max_length=2000)
+
+
+@router.post("/link", status_code=201)
+def import_link(
+    body: LinkImport, a: Actor = Depends(actor), svc: Services = Depends(services)
+) -> dict[str, Any]:
+    """Download an https:// link and start an import from it, as if it were uploaded."""
+    url, fetched = links.download_for_import(svc, a, body.url)
+    with svc.db.transaction() as s:
+        return import_out(links.create_import(svc, s, a, url, fetched))
 
 
 @router.get("")

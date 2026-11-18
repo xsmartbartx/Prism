@@ -85,6 +85,9 @@ services:
       PRISM_DATABASE_URL: postgresql+psycopg://prism@postgres:5432/prism?passfile=/secrets/pgpass
       PRISM_LICENSE_KEY: ${PRISM_LICENSE_KEY:-}
       PRISM_MAX_UPLOAD_MB: ${PRISM_MAX_UPLOAD_MB:-100}
+      # Never allow private addresses here: on a shared host they are the other products'
+      # containers and databases.
+      PRISM_LINK_ALLOW_PRIVATE: "false"
       PRISM_LOG_LEVEL: ${PRISM_LOG_LEVEL:-INFO}
       # Only reachable through the edge Caddy on this network, which only accepts Cloudflare
       # (cloudflare_only), so Cloudflare's header names the real client for rate limiting.

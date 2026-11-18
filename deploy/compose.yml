@@ -21,6 +21,8 @@ x-prism-env: &prism-env
   # Escaped by Prism and inserted into the URL, so the password may contain any character.
   PRISM_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-}
   PRISM_MAX_UPLOAD_MB: ${PRISM_MAX_UPLOAD_MB:-100}
+  PRISM_LINK_IMPORTS: ${PRISM_LINK_IMPORTS:-true}
+  PRISM_LINK_ALLOW_PRIVATE: ${PRISM_LINK_ALLOW_PRIVATE:-false}
   PRISM_FORWARDED_ALLOW_IPS: "*"
   PRISM_LOG_LEVEL: ${PRISM_LOG_LEVEL:-INFO}
 

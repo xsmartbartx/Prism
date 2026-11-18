@@ -7,7 +7,7 @@ Internal guide for running Prism as a product. Not shipped to customers.
 | Plan | Suggested price | Limits | For |
 |---|---|---|---|
 | Community | Free | 5 users, 1 workspace, 10 datasets, 5 dashboards, 25 MB uploads, Prism branding on share pages | Evaluation, small teams, lead generation |
-| Pro | $49 / instance / month, or $490 / year | 25 users (adjustable via `seats`), 3 workspaces, unlimited datasets/dashboards, 500 MB uploads, embedding, API keys, white-label share pages | Departments replacing spreadsheet reporting |
+| Pro | $49 / instance / month, or $490 / year | 25 users (adjustable via `seats`), 3 workspaces, unlimited datasets/dashboards, 500 MB uploads, scheduled refresh from links, embedding, API keys, white-label share pages | Departments replacing spreadsheet reporting |
 | Business | $199 / instance / month, or $1,990 / year | Unlimited users/workspaces, 2 GB uploads, priority support | Multi-team or client-facing deployments |
 
 Prices are starting points: adjust in `site/index.html` and here. Limits live in `PLANS` in `server/services/licensing.py`; changing them affects every instance on upgrade, so grandfather existing customers through license `seats`/`workspaces` overrides rather than lowering defaults.

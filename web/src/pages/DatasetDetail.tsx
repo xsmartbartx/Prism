@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { BarChart3, Download, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
-import { can, del, download, patch, post, type Chart, type Dataset, type QueryResult } from "../api";
+import { can, del, download, patch, post, put, type Chart, type Dataset, type DatasetLink, type LinkRefresh, type QueryResult } from "../api";
 import { useApp, useLoad } from "../app-state";
 import { Confirm, DataTable, ErrorBox, Modal, PageLoading, StatusBadge, TypeDot, fmtDate, fmtNum, timeAgo } from "../components/ui";
 import Dropzone from "../components/Dropzone";
+import { LinkForm, SourceLinkCard, refreshMessage } from "../components/SourceLink";
 
 type Tab = "overview" | "data" | "quarantine" | "versions" | "settings";
 
@@ -18,11 +19,38 @@ export default function DatasetDetail() {
   const [showRefresh, setShowRefresh] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const charts = useLoad<Chart[]>(`/api/v1/charts?dataset_id=${id}`);
+  const author = can.author(me?.role);
+  // Only authors may see the link (it can carry an access token); others never ask for it.
+  const linkPath = author ? `/api/v1/datasets/${id}/link` : null;
+  const linkRes = useLoad<{ link: DatasetLink | null; can_schedule: boolean }>(linkPath);
+  // Never show the previous dataset's link while this one's is loading.
+  const link = linkRes.loadedPath === linkPath ? linkRes.data?.link ?? null : null;
 
   if (error) return <ErrorBox error={error} onRetry={reload} />;
   if (!ds) return <PageLoading />;
   const v = ds.current_version;
   const role = me?.role;
+
+  const afterLinkChange = () => {
+    void reload();
+    void linkRes.reload();
+  };
+
+  const attachLink = async (url: string) => {
+    setRefreshing(true);
+    try {
+      await put(`/api/v1/datasets/${id}/link`, { url, schedule: "manual" });
+      const msg = refreshMessage(await post<LinkRefresh>(`/api/v1/datasets/${id}/link/refresh`));
+      toast(msg.text, msg.error ? "error" : undefined);
+      setShowRefresh(false);
+      afterLinkChange();
+    } catch (e) {
+      toast((e as Error).message, "error");
+      afterLinkChange(); // the link may be saved even if its first refresh failed
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const onRefresh = async (f: File) => {
     setRefreshing(true);
@@ -81,6 +109,7 @@ export default function DatasetDetail() {
 
       {tab === "overview" && v && (
         <div className="stack">
+          {link && <SourceLinkCard key={`${id}:${link.url}`} datasetId={id} link={link} canSchedule={!!linkRes.data?.can_schedule} onChange={afterLinkChange} />}
           <div className="table-wrap">
             <table className="table">
               <thead>
@@ -148,6 +177,12 @@ export default function DatasetDetail() {
             The file is checked against this dataset's column contract. Columns are matched by header name, so reordered columns and extra title rows are fine. A missing column or a wrong type stops the load with a clear message instead of producing wrong numbers.
           </p>
           <Dropzone onFile={onRefresh} busy={refreshing} compact />
+          {!link && (
+            <>
+              <p className="muted small" style={{ marginTop: 16 }}>Or load it from a link, and refresh from the same link whenever you like (or on a schedule):</p>
+              <LinkForm onSubmit={attachLink} busy={refreshing} label="Use link" />
+            </>
+          )}
         </Modal>
       )}
       {confirmDelete && (

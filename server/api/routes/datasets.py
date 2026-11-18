@@ -13,10 +13,10 @@ from presentation.export import to_csv, to_xlsx
 from presentation.recommend import FieldInfo, recommend
 from server.api.deps import actor, services
 from server.api.routes.imports import read_upload
-from server.api.serializers import dataset_out, version_out
+from server.api.serializers import dataset_out, link_out, version_out
 from server.container import Services
 from server.errors import BadRequest
-from server.services import audit
+from server.services import audit, links
 from server.services.context import Actor
 from server.services.queries import jsonable_rows
 
@@ -28,6 +28,11 @@ class DatasetPatch(BaseModel):
     description: str | None = Field(default=None, max_length=5000)
     tags: list[str] | None = None
     status: str | None = None
+
+
+class LinkIn(BaseModel):
+    url: str = Field(min_length=1, max_length=2000)
+    schedule: str = "manual"
 
 
 class RecommendIn(BaseModel):
@@ -86,8 +91,14 @@ def load_sample(a: Actor = Depends(actor), svc: Services = Depends(services)) ->
             locale=p["locale"],
             tags=["sample"],
             columns=[
-                ColumnDecision(index=c["index"], source_name=c["source_name"], name=c["name"],
-                               type=c["type"], role=c["role"], locale=c["locale"])
+                ColumnDecision(
+                    index=c["index"],
+                    source_name=c["source_name"],
+                    name=c["name"],
+                    type=c["type"],
+                    role=c["role"],
+                    locale=c["locale"],
+                )
                 for c in p["columns"]
             ],
         )
@@ -152,6 +163,62 @@ async def refresh(
                 "reasons": loaded.result.reasons,
                 "drift": loaded.result.drift,
             },
+        }
+
+
+@router.get("/{dataset_id}/link")
+def get_link(
+    dataset_id: str, a: Actor = Depends(actor), svc: Services = Depends(services)
+) -> dict[str, Any]:
+    with svc.db.transaction() as s:
+        ds = svc.artifacts.get_dataset(s, a, dataset_id)
+        link = links.get_link(s, a, ds)
+        from server.services.licensing import current_state
+
+        return {
+            "link": link_out(link) if link else None,
+            # Whether the plan allows a schedule, so the UI can say so before anyone picks one.
+            "can_schedule": "scheduled_refresh" in current_state(svc, s).plan.features,
+        }
+
+
+@router.put("/{dataset_id}/link")
+def put_link(
+    dataset_id: str, body: LinkIn, a: Actor = Depends(actor), svc: Services = Depends(services)
+) -> dict[str, Any]:
+    with svc.db.transaction() as s:
+        ds = svc.artifacts.get_dataset(s, a, dataset_id)
+        return {"link": link_out(links.set_link(svc, s, a, ds, body.url, body.schedule))}
+
+
+@router.delete("/{dataset_id}/link", status_code=204)
+def delete_link(
+    dataset_id: str, a: Actor = Depends(actor), svc: Services = Depends(services)
+) -> None:
+    with svc.db.transaction() as s:
+        links.delete_link(s, a, svc.artifacts.get_dataset(s, a, dataset_id))
+
+
+@router.post("/{dataset_id}/link/refresh")
+def refresh_link(
+    dataset_id: str, a: Actor = Depends(actor), svc: Services = Depends(services)
+) -> dict[str, Any]:
+    """Download the dataset's link now; a changed file becomes a new version."""
+    outcome = links.refresh(svc, a, dataset_id)
+    with svc.db.transaction() as s:
+        ds = svc.artifacts.get_dataset(s, a, dataset_id)
+        link = links.get_link(s, a, ds)
+        version = svc.queries.current_version(s, ds) if ds.current_version_id else None
+        return {
+            "outcome": {
+                "status": outcome.status,
+                "error": outcome.error,
+                "version": outcome.version,
+                "rows": outcome.rows,
+                "quarantined": outcome.quarantined,
+            },
+            "link": link_out(link) if link else None,
+            "dataset": dataset_out(ds, version),
         }
 
 

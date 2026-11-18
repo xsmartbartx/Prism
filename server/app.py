@@ -100,7 +100,15 @@ def create_app(settings: Settings | None = None, *, db: Database | None = None) 
                 "Put Prism behind HTTPS (see deploy/compose.yml) and set an https:// base URL."
             )
         log.info("Prism %s ready on %s", __version__, settings.base_url)
+        scheduler = None
+        if settings.scheduler and settings.link_imports and settings.env != "test":
+            from server.scheduler import Scheduler
+
+            scheduler = Scheduler(svc)
+            scheduler.start()
         yield
+        if scheduler is not None:
+            scheduler.stop()
         svc.db.dispose()
 
     app = FastAPI(
