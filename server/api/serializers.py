@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlsplit
 
 from server.db.models import (
     ApiKey,
@@ -10,6 +11,7 @@ from server.db.models import (
     Chart,
     Dashboard,
     Dataset,
+    DatasetLink,
     DatasetVersion,
     Import,
     Invite,
@@ -50,7 +52,31 @@ def import_out(i: Import) -> dict[str, Any]:
         "proposal": i.proposal,
         "error": i.error,
         "dataset_id": i.dataset_id,
+        "source_host": _host(i.source_url),
         "created_at": i.created_at,
+    }
+
+
+def _host(url: str | None) -> str | None:
+    if not url:
+        return None
+    try:
+        return urlsplit(url).hostname
+    except ValueError:
+        return None
+
+
+def link_out(link: DatasetLink) -> dict[str, Any]:
+    return {
+        "url": link.url,
+        "host": _host(link.url),
+        "schedule": link.schedule,
+        "next_run_at": link.next_run_at,
+        "last_run_at": link.last_run_at,
+        "last_status": link.last_status,
+        "last_error": link.last_error,
+        "failures": link.failures,
+        "updated_at": link.updated_at,
     }
 
 

@@ -125,7 +125,17 @@ export interface Dataset {
 export interface Candidate { type: PrismType; confidence: number; samples: string[]; failures: string[] }
 export interface ColumnProposal { index: number; source_name: string; name: string; type: PrismType; locale: string; role: string; nullable: boolean; ambiguous: boolean; null_ratio: number; distinct_ratio: number; candidates: Candidate[]; notes: string[] }
 export interface Proposal { header_row: number; data_start_row: number; locale: string; confidence: number; columns: ColumnProposal[]; preview: string[][]; row_estimate: number; warnings: string[]; sheet: string | null; delimiter: string | null; encoding: string | null; needs_review: boolean; sample_truncated?: boolean }
-export interface ImportRec { id: string; filename: string; file_kind: "csv" | "xlsx" | "sqlite" | "parquet"; size_bytes: number; status: string; sheet_names: { name: string; hidden: boolean }[]; proposal: Proposal; error: string | null; dataset_id: string | null; created_at: string }
+export interface ImportRec { id: string; filename: string; file_kind: "csv" | "xlsx" | "sqlite" | "parquet"; size_bytes: number; status: string; sheet_names: { name: string; hidden: boolean }[]; proposal: Proposal; error: string | null; dataset_id: string | null; source_host?: string | null; created_at: string }
+
+export type RefreshSchedule = "manual" | "hourly" | "daily" | "weekly";
+export interface DatasetLink {
+  url: string; host: string | null; schedule: RefreshSchedule; next_run_at: string | null; last_run_at: string | null;
+  last_status: "loaded" | "unchanged" | "failed" | "drift" | null; last_error: string | null; failures: number; updated_at: string;
+}
+export interface LinkRefresh {
+  outcome: { status: "loaded" | "unchanged" | "failed" | "drift"; error: string | null; version: number | null; rows: number | null; quarantined: number | null };
+  link: DatasetLink | null; dataset: Dataset;
+}
 
 export interface Aggregation { column: string; function: "sum" | "avg" | "count" | "min" | "max" | "count_distinct" | "median"; alias?: string | null }
 export interface Filter { column: string; operator: string; value: unknown }

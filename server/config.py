@@ -51,6 +51,22 @@ class Settings(BaseSettings):
     query_timeout_s: float = Field(default=30.0, gt=0)
     login_rate_limit: int = Field(default=10, description="Failed logins per IP per 15 minutes.")
 
+    link_imports: bool = Field(
+        default=True, description="Allow importing and refreshing datasets from https:// links."
+    )
+    link_allow_private: bool = Field(
+        default=False,
+        description=(
+            "Let links reach private network addresses (10/8, 172.16/12, 192.168/16, "
+            "100.64/10, fc00::/7), e.g. an intranet file server. Loopback and link-local "
+            "(cloud metadata) addresses are always refused."
+        ),
+    )
+    link_timeout_s: float = Field(default=60.0, gt=0, le=600)
+    scheduler: bool = Field(
+        default=True, description="Run scheduled link refreshes in this process."
+    )
+
     license_key: str | None = Field(default=None, description="Signed license key (Pro/Business).")
     license_public_key: str | None = Field(
         default=None, description="Override the vendor license verification key (testing)."

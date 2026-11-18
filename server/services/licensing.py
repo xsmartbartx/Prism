@@ -81,7 +81,7 @@ PLANS: dict[str, Plan] = {
         UNLIMITED,
         UNLIMITED,
         500,
-        frozenset({"share", "embed", "api", "white_label", "audit_export"}),
+        frozenset({"share", "embed", "api", "white_label", "audit_export", "scheduled_refresh"}),
     ),
     "business": Plan(
         "business",
@@ -91,7 +91,17 @@ PLANS: dict[str, Plan] = {
         UNLIMITED,
         UNLIMITED,
         2048,
-        frozenset({"share", "embed", "api", "white_label", "audit_export", "priority_support"}),
+        frozenset(
+            {
+                "share",
+                "embed",
+                "api",
+                "white_label",
+                "audit_export",
+                "scheduled_refresh",
+                "priority_support",
+            }
+        ),
     ),
 }
 
@@ -100,6 +110,7 @@ FEATURE_NAMES = {
     "api": "API keys",
     "white_label": "Removing Prism branding from shared pages",
     "audit_export": "Audit log export",
+    "scheduled_refresh": "Scheduled refresh from links",
 }
 
 

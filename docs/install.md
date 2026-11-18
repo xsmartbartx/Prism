@@ -29,6 +29,7 @@ Edit `.env`:
 | `PRISM_BACKUP_KEEP` | no | Daily backups to keep (default 14) |
 | `PRISM_DATABASE_URL` | no | PostgreSQL URL; empty = embedded SQLite |
 | `PRISM_DATABASE_PASSWORD` | no | Database password, escaped into the URL (compose sets it from `POSTGRES_PASSWORD`) |
+| `PRISM_LINK_ALLOW_PRIVATE` | no | Let dataset links reach private network addresses (default `false`; see [Security](security.md#links)) |
 | `PRISM_CLIENT_IP_HEADER` | no | Client-IP header of a CDN that is the only way in (e.g. `CF-Connecting-IP`) |
 | `PRISM_IMAGE` | no | Image tag, e.g. `ghcr.io/xsmartbartx/prism:1.0.0` (pin in production) |
 

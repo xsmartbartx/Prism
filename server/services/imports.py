@@ -327,6 +327,10 @@ class ImportService:
         )
         imp.status = ImportStatus.LOADED.value
         imp.dataset_id = dataset.id
+        if imp.source_url:
+            from server.services.links import attach
+
+            attach(s, actor, dataset, imp.source_url)
         return loaded
 
     def refresh(

@@ -19,6 +19,18 @@ Values such as `n/a`, `-`, `NULL` or `#N/A` become empty cells in number and dat
 
 SQLite and Parquet columns already have types, but Prism still proposes and checks each column's type like any other file, so a refresh is validated the same way. From a SQLite database Prism offers ordinary tables only (views and virtual tables are not offered). Binary values (BLOBs) are not imported; the review lists the affected columns. In Parquet files, nested values (lists, structs, maps) are imported as JSON text and timestamps with a time zone are converted to UTC.
 
+### Import from a link
+
+Instead of a file, paste an `https://` link under the drop area on **Datasets** and click **Import from link**. Prism downloads the file and opens the same **Review import**; it works out from the content whether it is CSV, Excel, Parquet or SQLite. The dataset remembers the link, so it can be refreshed from it later (see below).
+
+The link must lead straight to the file, and anyone with the link must be able to download it:
+
+- **Google Sheets:** File → Share → **Publish to web**, choose the sheet and **Comma-separated values (.csv)**, and use the link it gives you.
+- **OneDrive, Dropbox, GitHub and similar:** use their *download* or *raw* link, not the page that shows the file.
+- An export URL from your own system (ERP, CRM, BI tool) works if it serves the file over HTTPS without a sign-in.
+
+If the link returns a web page (usually a sign-in page) Prism says so instead of importing it. For security, links to private network addresses are refused unless your administrator has allowed them (see [Security](security.md#links)).
+
 ### Quarantine
 
 Rows that don't match the column contract are not loaded and not "fixed". They appear on the dataset's **Quarantine** tab with the source row number and the reason. If more rows fail than the tolerance allows, the import stops with an explanation — a mostly broken file never becomes a mostly empty dataset.
@@ -30,6 +42,17 @@ Open the dataset → **Load new file**. The file is checked against the dataset'
 - Columns are matched by header name, so reordering columns or adding a title row is fine.
 - A missing column stops the load (**drift**) — fix the file or create a new dataset.
 - Every successful load becomes a new **version**; charts always show the latest version and record which version produced their numbers.
+
+### Refresh from a link
+
+A dataset imported from a link shows a **Source link** panel on its **Overview**. To give an existing dataset a link, open **Load new file** and paste it under **Or load it from a link**.
+
+- **Refresh now** downloads the link. If the file has not changed since the last version (the server says so, or the bytes are identical), nothing is loaded and the panel says **No changes**. A changed file is checked like any other refresh and becomes a new version.
+- **Refresh** chooses a schedule: only when you click, every hour, every day or every week (scheduled refresh needs the Pro or Business plan). Scheduled refreshes run with the access of the person who chose the schedule; if they leave the workspace or are no longer an author, the schedule pauses until another author sets it again.
+- If a refresh fails — the link is down, or the file's columns changed (drift) — the panel shows why, and the current version stays as it was. After five failures in a row a schedule pauses itself, so a broken link does not fail forever unnoticed.
+- **Change** points the dataset at another link; the bin icon removes the link (the dataset and its versions stay).
+
+Only authors, stewards and admins see a dataset's link, because a link can contain an access token.
 
 ## Build a chart
 

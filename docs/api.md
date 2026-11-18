@@ -46,6 +46,24 @@ curl -H "Authorization: Bearer $KEY" -F file=@sales-2026-11.xlsx \
 
 A 422 `DriftDetected` response means the file no longer matches the dataset's columns; nothing was loaded.
 
+## Import and refresh from a link
+
+```bash
+# Start an import from a link (then review and commit it like an upload)
+curl -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+     -d '{"url": "https://example.com/exports/sales.csv"}' $PRISM/api/v1/imports/link
+
+# Set or change a dataset's link and schedule: manual | hourly | daily | weekly
+curl -X PUT -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+     -d '{"url": "https://example.com/exports/sales.csv", "schedule": "daily"}' \
+     $PRISM/api/v1/datasets/<dataset_id>/link
+
+# Refresh now
+curl -X POST -H "Authorization: Bearer $KEY" $PRISM/api/v1/datasets/<dataset_id>/link/refresh
+```
+
+`POST …/link/refresh` always answers 200 with `outcome.status`: `loaded` (a new version, with `version`, `rows`, `quarantined`), `unchanged`, `drift` or `failed` (with `error`). `GET …/link` returns `{link, can_schedule}` and `DELETE …/link` stops following the link. Scheduling needs the Pro or Business plan (402 otherwise).
+
 ## Query
 
 Every question is a declarative query spec — there is no raw SQL surface.
