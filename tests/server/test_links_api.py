@@ -34,6 +34,7 @@ class FakeLinks:
         self.etag: str | None = '"v1"'
         self.error: Exception | None = None
         self.not_modified = False
+        self.filename = "units.csv"
         self.calls: list[dict[str, Any]] = []
 
     def __call__(
@@ -49,7 +50,8 @@ class FakeLinks:
             raise self.error
         if self.not_modified:
             return Fetched(url=url, not_modified=True, etag=etag)
-        return Fetched(url=url, data=self.body, kind="csv", filename="units.csv", etag=self.etag)
+        kind = "xlsx" if self.filename.endswith(".xlsx") else "csv"
+        return Fetched(url=url, data=self.body, kind=kind, filename=self.filename, etag=self.etag)
 
 
 def _fake(c: TestClient) -> FakeLinks:
@@ -121,7 +123,8 @@ def test_import_from_link_and_refresh_now(client: TestClient) -> None:
     with _svc(client).db.transaction() as s:
         refreshed = s.scalars(select(Import).order_by(Import.created_at.desc())).first()
         assert refreshed is not None and refreshed.source_url == URL
-        assert not Path(refreshed.storage_path).exists()  # downloads are not kept
+        assert refreshed.storage_path == ""  # refresh downloads are never written to disk
+    assert not (_svc(client).settings.uploads_dir / refreshed.workspace_id / refreshed.id).exists()
 
     fake.not_modified = True
     assert _refresh(client, ds["id"])["outcome"]["status"] == "unchanged"
@@ -289,3 +292,91 @@ def test_links_can_be_turned_off(tmp_path: Path) -> None:
         r = c.post("/api/v1/imports/link", json={"url": URL}, headers=H)
         assert r.status_code == 403 and "turned off" in r.text
         assert links.run_due(_svc(c)) == 0
+
+
+def _uploads(c: TestClient) -> int:
+    return sum(1 for f in _svc(c).settings.uploads_dir.rglob("*") if f.is_file())
+
+
+def test_failed_refreshes_leave_no_files(client: TestClient) -> None:
+    setup_admin(client)
+    fake = _fake(client)
+    ds = _import_link(client)["dataset"]
+    before = _uploads(client)
+    fake.body = b"Region,Count\nEU,3\n"
+    assert _refresh(client, ds["id"])["outcome"]["status"] == "drift"
+    fake.body, fake.filename = b"PK\x03\x04 not really a workbook", "units.xlsx"
+    out = _refresh(client, ds["id"])  # the wrong kind of file for a CSV dataset
+    assert out["outcome"]["status"] == "failed" and "delimited text" in out["outcome"]["error"]
+    assert _uploads(client) == before
+
+
+def test_a_link_changed_mid_download_loads_nothing(client: TestClient) -> None:
+    setup_admin(client)
+    fake = _fake(client)
+    svc = _svc(client)
+    ds = _import_link(client)["dataset"]
+    real = fake.__call__
+
+    def moved_during_download(url: str, policy: LinkPolicy, **kw: Any) -> Fetched:
+        with svc.db.transaction() as s:
+            s.scalars(select(DatasetLink)).one().url = "https://data.test/other.csv"
+        return real(url, policy, **kw)
+
+    fake.body, fake.etag = V2, '"stale"'
+    svc.link_fetch = moved_during_download
+    out = _refresh(client, ds["id"])
+    assert out["outcome"]["status"] == "failed" and "changed while" in out["outcome"]["error"]
+    assert out["dataset"]["current_version"]["version"] == 1
+    row = _link_row(client, ds["id"])
+    assert row.url == "https://data.test/other.csv" and row.etag is None
+
+
+def test_an_upload_makes_the_next_link_refresh_download_in_full(client: TestClient) -> None:
+    setup_admin(client)
+    fake = _fake(client)
+    ds = _import_link(client)["dataset"]
+    _refresh(client, ds["id"])
+    assert _link_row(client, ds["id"]).etag == '"v1"'
+    r = client.post(f"/api/v1/datasets/{ds['id']}/refresh",
+                    files={"file": ("u.csv", V2, "text/csv")}, headers=H)
+    assert r.status_code == 201, r.text
+    assert _link_row(client, ds["id"]).etag is None
+    fake.body = V1  # the link still serves the old file: it must win back, not be "unchanged"
+    out = _refresh(client, ds["id"])
+    assert out["outcome"]["status"] == "loaded" and out["dataset"]["row_count"] == 3
+    assert fake.calls[-1]["etag"] is None
+
+
+def test_only_the_lease_holder_releases_the_lease(client: TestClient) -> None:
+    setup_admin(client)
+    fake = _fake(client)
+    svc = _svc(client)
+    ds = _import_link(client)["dataset"]
+    client.put(f"/api/v1/datasets/{ds['id']}/link", json={"url": URL, "schedule": "hourly"},
+               headers=H)
+    held_until = utcnow() + timedelta(minutes=10)
+    with svc.db.transaction() as s:
+        link = s.scalars(select(DatasetLink)).one()
+        link.lease_until, link.lease_token = held_until, "scheduler-a"
+        next_run = link.next_run_at
+
+    _refresh(client, ds["id"])  # a manual refresh while the scheduler holds the link
+    row = _link_row(client, ds["id"])
+    assert row.lease_token == "scheduler-a" and row.next_run_at == next_run
+
+    # A scheduled run whose lease was taken over by another process leaves that lease alone.
+    real = fake.__call__
+
+    def taken_over(url: str, policy: LinkPolicy, **kw: Any) -> Fetched:
+        with svc.db.transaction() as s:
+            s.scalars(select(DatasetLink)).one().lease_token = "scheduler-b"
+        return real(url, policy, **kw)
+
+    svc.link_fetch = taken_over
+    with svc.db.transaction() as s:
+        link = s.scalars(select(DatasetLink)).one()
+        link.next_run_at, link.lease_until, link.lease_token = utcnow() - timedelta(minutes=1), None, None
+    assert links.run_due(svc) == 1
+    row = _link_row(client, ds["id"])
+    assert row.lease_token == "scheduler-b" and row.lease_until is not None

@@ -107,11 +107,15 @@ export function useLoad<T>(path: string | null, deps: unknown[] = []) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(!!path);
+  // Which path ``data`` came from: after navigation it still holds the previous page's answer
+  // until the new one arrives.
+  const [loadedPath, setLoadedPath] = useState<string | null>(null);
   const load = useCallback(async () => {
     if (!path) return;
     setLoading(true);
     try {
       setData(await get<T>(path));
+      setLoadedPath(path);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -123,7 +127,7 @@ export function useLoad<T>(path: string | null, deps: unknown[] = []) {
   useEffect(() => {
     void load();
   }, [load]);
-  return { data, error, loading, reload: load, setData };
+  return { data, error, loading, loadedPath, reload: load, setData };
 }
 
 /** The theme actually shown ("system" resolved against the OS setting). */

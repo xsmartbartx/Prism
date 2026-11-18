@@ -26,7 +26,7 @@ export function refreshMessage(r: LinkRefresh): { text: string; error: boolean }
 }
 
 /** The link a dataset refreshes from: schedule, last result, refresh now, edit or remove. */
-export function SourceLinkCard({ datasetId, link, canSchedule, onChange }: { datasetId: string; link: DatasetLink; canSchedule: boolean; onChange: () => void }) {
+export function SourceLinkCard({ datasetId, link, canSchedule, onChange }: Readonly<{ datasetId: string; link: DatasetLink; canSchedule: boolean; onChange: () => void }>) {
   const { toast } = useApp();
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -66,21 +66,21 @@ export function SourceLinkCard({ datasetId, link, canSchedule, onChange }: { dat
       <div className="card-head">
         <h2 className="row" style={{ gap: 8 }}><Link2 size={16} /> Source link</h2>
         <div className="row">
-          <button className="btn btn-sm" onClick={refreshNow} disabled={busy}><RefreshCw size={14} /> {busy ? "Refreshing…" : "Refresh now"}</button>
-          <button className="btn btn-sm btn-ghost" onClick={() => setConfirmRemove(true)} aria-label="Remove link" title="Stop refreshing from this link"><Trash2 size={14} /></button>
+          <button type="button" className="btn btn-sm" onClick={refreshNow} disabled={busy}><RefreshCw size={14} /> {busy ? "Refreshing…" : "Refresh now"}</button>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => setConfirmRemove(true)} aria-label="Remove link" title="Stop refreshing from this link"><Trash2 size={14} /></button>
         </div>
       </div>
       <div className="card-pad stack" style={{ gap: 12 }}>
         {editing ? (
           <form className="row" onSubmit={(e: FormEvent) => { e.preventDefault(); void save({ url }); }}>
             <input className="input grow mono" type="url" value={url} onChange={(e) => setUrl(e.target.value)} aria-label="Link" required />
-            <button className="btn btn-primary btn-sm" disabled={busy || !url.trim()}>Save</button>
+            <button type="submit" className="btn btn-primary btn-sm" disabled={busy || !url.trim()}>Save</button>
             <button type="button" className="btn btn-sm" onClick={() => { setEditing(false); setUrl(link.url); }}>Cancel</button>
           </form>
         ) : (
           <div className="row" style={{ flexWrap: "nowrap" }}>
             <span className="mono small truncate grow" title={link.url}>{link.url}</span>
-            <button className="btn btn-sm btn-ghost" onClick={() => setEditing(true)}>Change</button>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => setEditing(true)}>Change</button>
           </div>
         )}
         <div className="row small" style={{ gap: 16 }}>
@@ -108,9 +108,12 @@ export function SourceLinkCard({ datasetId, link, canSchedule, onChange }: { dat
           confirmLabel="Remove link"
           onClose={() => setConfirmRemove(false)}
           onConfirm={async () => {
-            await del(base);
-            setConfirmRemove(false);
-            onChange();
+            try {
+              await del(base);
+              onChange();
+            } catch (e) {
+              toast((e as Error).message, "error");
+            }
           }}
         />
       )}
@@ -119,7 +122,7 @@ export function SourceLinkCard({ datasetId, link, canSchedule, onChange }: { dat
 }
 
 /** A small form for a link: used to import from a link, and to attach one to a dataset. */
-export function LinkForm({ onSubmit, busy, label, placeholder }: { onSubmit: (url: string) => void | Promise<void>; busy: boolean; label: string; placeholder?: string }) {
+export function LinkForm({ onSubmit, busy, label, placeholder }: Readonly<{ onSubmit: (url: string) => void | Promise<void>; busy: boolean; label: string; placeholder?: string }>) {
   const [url, setUrl] = useState("");
   return (
     <form
@@ -132,7 +135,7 @@ export function LinkForm({ onSubmit, busy, label, placeholder }: { onSubmit: (ur
     >
       <Link2 size={16} color="var(--text-3)" aria-hidden />
       <input className="input grow" type="url" inputMode="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder={placeholder ?? "https://…"} aria-label={label} />
-      <button className="btn" disabled={busy || !url.trim()}>{label}</button>
+      <button type="submit" className="btn" disabled={busy || !url.trim()}>{label}</button>
     </form>
   );
 }

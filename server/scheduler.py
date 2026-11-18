@@ -38,7 +38,7 @@ class Scheduler:
             try:
                 # Work through a backlog in batches, but stop promptly on shutdown.
                 for _ in range(20):
-                    if not run_due(self.svc) or self._stop.is_set():
+                    if self._stop.is_set() or not run_due(self.svc):
                         break
             except Exception:
                 log.exception("Scheduled refresh round failed")

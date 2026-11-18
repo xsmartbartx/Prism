@@ -21,7 +21,6 @@ import hashlib
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any
 
 from sqlalchemy import or_, select, update
@@ -39,6 +38,7 @@ from server.db.models import (
     RefreshSchedule,
     Role,
     User,
+    new_id,
 )
 from server.errors import BadRequest, Forbidden, NotFound
 from server.services import audit
@@ -140,6 +140,8 @@ def attach(s: Session, actor: Actor, dataset: Dataset, url: str) -> DatasetLink:
     elif link.url != url:
         _reset(link)
         link.url = url
+    else:
+        link.etag = link.last_modified = None  # this version came from the import's download
     s.flush()
     return link
 
@@ -226,11 +228,33 @@ def _next_run(schedule: str, now: datetime) -> datetime | None:
 # ----------------------------------------------------------------------
 
 
-def refresh(svc: Any, actor: Actor, dataset_id: str, *, scheduled: bool = False) -> Outcome:
+@dataclass(frozen=True)
+class _Run:
+    """One refresh: the link it downloaded, and the scheduler lease it holds (if scheduled)."""
+
+    url: str | None
+    lease: str | None = None
+
+    @property
+    def scheduled(self) -> bool:
+        return self.lease is not None
+
+
+STALE = "The link was changed while this refresh ran, so nothing was loaded. Refresh again."
+
+
+def _locked_link(s: Session, dataset_id: str) -> DatasetLink | None:
+    return s.scalars(
+        select(DatasetLink).where(DatasetLink.dataset_id == dataset_id).with_for_update()
+    ).first()
+
+
+def refresh(svc: Any, actor: Actor, dataset_id: str, *, lease: str | None = None) -> Outcome:
     """Download the link and load it as a new version when it changed.
 
     Failures are recorded on the link and returned, never raised, so the caller
-    always sees what happened and the record survives the failed load.
+    always sees what happened and the record survives the failed load. ``lease``
+    is the scheduler's claim on the link; manual refreshes have none.
     """
     actor.require("author")
     require_enabled(svc)
@@ -241,42 +265,42 @@ def refresh(svc: Any, actor: Actor, dataset_id: str, *, scheduled: bool = False)
         link = s.scalars(select(DatasetLink).where(DatasetLink.dataset_id == ds.id)).first()
         if link is None:
             raise NotFound("This dataset has no link to refresh from")
-        url, etag, last_modified = link.url, link.etag, link.last_modified
+        run = _Run(link.url, lease)
+        etag, last_modified = link.etag, link.last_modified
         current = s.get(DatasetVersion, ds.current_version_id) if ds.current_version_id else None
         current_sha = current.source_sha256 if current else None
         policy = link_policy(svc, s)
 
     try:
-        fetched = svc.link_fetch(url, policy, etag=etag, last_modified=last_modified)
+        fetched = svc.link_fetch(run.url, policy, etag=etag, last_modified=last_modified)
     except PrismError as exc:
-        return _record(svc, actor, dataset_id, Outcome("failed", str(exc)), scheduled)
+        return _record(svc, actor, dataset_id, Outcome("failed", str(exc)), run)
 
     if fetched.not_modified or hashlib.sha256(fetched.data).hexdigest() == current_sha:
-        return _record(svc, actor, dataset_id, Outcome("unchanged"), scheduled, fetched)
+        return _record(svc, actor, dataset_id, Outcome("unchanged"), run, fetched)
 
     try:
         with svc.db.transaction() as s:
+            # Lock the link first: if it was pointed elsewhere during the download, this
+            # download must neither load nor leave its validators on the new link.
+            locked = _locked_link(s, dataset_id)
             ds = s.get(Dataset, dataset_id)
-            if ds is None:
-                raise NotFound("Dataset not found")
-            loaded = svc.imports.refresh(s, actor, ds, fetched.filename, fetched.data)
-            imp = s.get(Import, loaded.version.import_id) if loaded.version.import_id else None
-            if imp is not None:
-                imp.source_url = url
-                # The link is the source of truth; keeping every download would only fill the disk.
-                Path(imp.storage_path).unlink(missing_ok=True)
+            if ds is None or locked is None or locked.url != run.url:
+                return Outcome("failed", STALE)
+            loaded = svc.imports.refresh(
+                s, actor, ds, fetched.filename, fetched.data, source_url=run.url, store=False
+            )
             outcome = Outcome(
                 "loaded",
                 version=loaded.version.version,
                 rows=loaded.result.row_count,
                 quarantined=loaded.result.quarantine_count,
             )
-            _apply(s, ds.id, outcome, scheduled, fetched)
-            return outcome
+            return _apply(s, locked, outcome, run, fetched)
     except DriftDetected as exc:
-        return _record(svc, actor, dataset_id, Outcome("drift", str(exc)), scheduled)
+        return _record(svc, actor, dataset_id, Outcome("drift", str(exc)), run)
     except PrismError as exc:
-        return _record(svc, actor, dataset_id, Outcome("failed", str(exc)), scheduled)
+        return _record(svc, actor, dataset_id, Outcome("failed", str(exc)), run)
 
 
 def _record(
@@ -284,14 +308,17 @@ def _record(
     actor: Actor,
     dataset_id: str,
     outcome: Outcome,
-    scheduled: bool,
+    run: _Run,
     fetched: Fetched | None = None,
 ) -> Outcome:
     with svc.db.transaction() as s:
+        link = _locked_link(s, dataset_id)
         ds = s.get(Dataset, dataset_id)
-        if ds is None:
+        if ds is None or link is None:
             return outcome
-        final = _apply(s, ds.id, outcome, scheduled, fetched)
+        if run.url is not None and link.url != run.url:
+            return Outcome("failed", STALE) if outcome.status == "loaded" else outcome
+        final = _apply(s, link, outcome, run, fetched)
         if final.status in ("failed", "drift"):
             audit.record(
                 s,
@@ -300,26 +327,22 @@ def _record(
                 target_type="dataset",
                 target_id=ds.id,
                 description=f"Refreshing {ds.name} from its link failed: {final.error}",
-                details={"via": "schedule" if scheduled else "link"},
+                details={"via": "schedule" if run.scheduled else "link"},
             )
         return final
 
 
 def _apply(
     s: Session,
-    dataset_id: str,
+    link: DatasetLink,
     outcome: Outcome,
-    scheduled: bool,
+    run: _Run,
     fetched: Fetched | None,
 ) -> Outcome:
-    link = s.scalars(select(DatasetLink).where(DatasetLink.dataset_id == dataset_id)).first()
-    if link is None:
-        return outcome
     now = utcnow()
     link.last_run_at = now
     link.last_status = outcome.status
     link.last_error = outcome.error
-    link.lease_until = None
     if fetched is not None:
         link.etag = fetched.etag
         link.last_modified = fetched.last_modified
@@ -327,7 +350,10 @@ def _apply(
         link.failures = 0
     else:
         link.failures = (link.failures or 0) + 1
-    if scheduled:
+    # Only the run that holds the lease releases it and moves the schedule on; a manual
+    # refresh, or a scheduled one whose lease another process has since taken, leaves both.
+    if run.lease is not None and link.lease_token == run.lease:
+        link.lease_until = link.lease_token = None
         link.next_run_at = _next_run(link.schedule, now)
     if link.failures >= MAX_FAILURES and link.schedule != RefreshSchedule.MANUAL.value:
         pause = (
@@ -342,6 +368,17 @@ def _apply(
     return outcome
 
 
+def forget_validators(s: Session, dataset_id: str) -> None:
+    """A version that did not come from the link is now current: next time, download in full.
+
+    Otherwise the link could answer "not modified" against its last download and the
+    uploaded version would stay current while the link serves something else.
+    """
+    link = s.scalars(select(DatasetLink).where(DatasetLink.dataset_id == dataset_id)).first()
+    if link is not None:
+        link.etag = link.last_modified = None
+
+
 # ----------------------------------------------------------------------
 # Schedule
 # ----------------------------------------------------------------------
@@ -350,7 +387,7 @@ def _apply(
 def _pause(s: Session, link: DatasetLink, reason: str) -> None:
     link.schedule = RefreshSchedule.MANUAL.value
     link.next_run_at = None
-    link.lease_until = None
+    link.lease_until = link.lease_token = None
     link.last_run_at = utcnow()
     link.last_status = "failed"
     link.last_error = reason
@@ -407,15 +444,19 @@ def run_due(svc: Any, now: datetime | None = None, limit: int = 10) -> int:
         ).all()
     ran = 0
     for link_id in due:
+        token = new_id()
         with svc.db.transaction() as s:
+            claimed_at = utcnow()  # each lease runs from its own claim, not the batch start
             claimed = s.execute(
                 update(DatasetLink)
                 .where(
                     DatasetLink.id == link_id,
                     DatasetLink.next_run_at <= now,
-                    or_(DatasetLink.lease_until.is_(None), DatasetLink.lease_until < now),
+                    or_(
+                        DatasetLink.lease_until.is_(None), DatasetLink.lease_until < claimed_at
+                    ),
                 )
-                .values(lease_until=now + LEASE)
+                .values(lease_until=claimed_at + LEASE, lease_token=token)
             )
             if getattr(claimed, "rowcount", 0) != 1:
                 continue  # another process took it
@@ -440,9 +481,9 @@ def run_due(svc: Any, now: datetime | None = None, limit: int = 10) -> int:
                 )
                 continue
         try:
-            refresh(svc, actor, dataset_id, scheduled=True)
+            refresh(svc, actor, dataset_id, lease=token)
         except Exception:  # a bug must not stop the other schedules or keep the lease
             log.exception("Scheduled refresh of dataset %s failed", dataset_id)
-            _record(svc, actor, dataset_id, Outcome("failed", "Internal error"), True)
+            _record(svc, actor, dataset_id, Outcome("failed", "Internal error"), _Run(None, token))
         ran += 1
     return ran

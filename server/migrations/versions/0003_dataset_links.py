@@ -34,6 +34,7 @@ def upgrade() -> None:
         sa.Column("owner_id", sa.String(length=32), nullable=True),
         sa.Column("next_run_at", server.db.models.UTCDateTime(), nullable=True),
         sa.Column("lease_until", server.db.models.UTCDateTime(), nullable=True),
+        sa.Column("lease_token", sa.String(length=32), nullable=True),
         sa.Column("last_run_at", server.db.models.UTCDateTime(), nullable=True),
         sa.Column("last_status", sa.String(length=20), nullable=True),
         sa.Column("last_error", sa.Text(), nullable=True),

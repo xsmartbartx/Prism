@@ -40,8 +40,9 @@ curl -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
 ## Refresh a dataset (e.g. nightly)
 
 ```bash
+DATASET_ID=…   # from GET /api/v1/datasets
 curl -H "Authorization: Bearer $KEY" -F file=@sales-2026-11.xlsx \
-     $PRISM/api/v1/datasets/<dataset_id>/refresh
+     "$PRISM/api/v1/datasets/$DATASET_ID/refresh"
 ```
 
 A 422 `DriftDetected` response means the file no longer matches the dataset's columns; nothing was loaded.
@@ -56,10 +57,10 @@ curl -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
 # Set or change a dataset's link and schedule: manual | hourly | daily | weekly
 curl -X PUT -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
      -d '{"url": "https://example.com/exports/sales.csv", "schedule": "daily"}' \
-     $PRISM/api/v1/datasets/<dataset_id>/link
+     "$PRISM/api/v1/datasets/$DATASET_ID/link"
 
 # Refresh now
-curl -X POST -H "Authorization: Bearer $KEY" $PRISM/api/v1/datasets/<dataset_id>/link/refresh
+curl -X POST -H "Authorization: Bearer $KEY" "$PRISM/api/v1/datasets/$DATASET_ID/link/refresh"
 ```
 
 `POST …/link/refresh` always answers 200 with `outcome.status`: `loaded` (a new version, with `version`, `rows`, `quarantined`), `unchanged`, `drift` or `failed` (with `error`). `GET …/link` returns `{link, can_schedule}` and `DELETE …/link` stops following the link. Scheduling needs the Pro or Business plan (402 otherwise).

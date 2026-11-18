@@ -61,6 +61,22 @@ class Handler(BaseHTTPRequestHandler):
         Handler.seen.append({"path": self.path, "host": self.headers.get("Host", "")})
         if self.path == "/slow":
             time.sleep(1.5)
+        if self.path == "/trickle":  # one header byte at a time, each well inside any timeout
+            self.wfile.write(b"HTTP/1.0 200 OK\r\nX-Slow: ")
+            for _ in range(40):
+                try:
+                    self.wfile.write(b"x")
+                    self.wfile.flush()
+                except OSError:
+                    return
+                time.sleep(0.1)
+            return
+        if self.path == "/short":  # promises more than it sends, then closes
+            self.send_response(200)
+            self.send_header("Content-Length", "1000")
+            self.end_headers()
+            self.wfile.write(b"Region,Units\n")
+            return
         if self.path.startswith("/chunked"):
             self.send_response(200)
             self.send_header("Transfer-Encoding", "chunked")
@@ -138,3 +154,15 @@ def test_unreachable_and_slow(server: int) -> None:
     closed = Target(url="https://link.test:1/", host=HOST, port=1, path="/")
     with pytest.raises(LinkError, match="Could not connect"):
         https_transport(["127.0.0.1"], closed, {}, time.monotonic() + 5, 10, LinkPolicy(10))
+
+
+def test_one_deadline_covers_a_trickling_server(server: int) -> None:
+    started = time.monotonic()
+    with pytest.raises(LinkError, match="took too long"):
+        _get(server, "/trickle", timeout=0.8)
+    assert time.monotonic() - started < 2.5  # not the 4 s the server would take
+
+
+def test_a_cut_off_body_is_an_error(server: int) -> None:
+    with pytest.raises(LinkError, match="cut off"):
+        _get(server, "/short")

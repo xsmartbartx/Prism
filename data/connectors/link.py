@@ -23,19 +23,26 @@ server's ``Content-Type``.
 
 from __future__ import annotations
 
+import contextlib
 import http.client
 import ipaddress
 import re
 import socket
 import ssl
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from urllib.parse import unquote, urljoin, urlsplit
+from urllib.parse import quote, unquote, urljoin, urlsplit
 
 from core.errors import ConnectorError
 
 USER_AGENT = "Prism (link refresh)"
+TOO_SLOW = "The link took too long to answer"
+# Characters left as they are when a path or query is percent-encoded for the request line
+# ("%" too, so existing escapes are not encoded twice).
+_PATH_SAFE = "/%:@!$&'()*+,;=~"
+_QUERY_SAFE = _PATH_SAFE + "?"
 MAX_URL_LENGTH = 2000
 KIND_EXTENSION = {"csv": ".csv", "xlsx": ".xlsx", "sqlite": ".sqlite", "parquet": ".parquet"}
 _REDIRECTS = {301, 302, 303, 307, 308}
@@ -123,10 +130,27 @@ def check_url(url: str) -> Target:
     host = (parts.hostname or "").rstrip(".")
     if not host:
         raise LinkError("The link has no host name")
-    path = parts.path or "/"
+    # The request line must be ASCII: encode anything else (``Zürich.csv``), keep escapes.
+    path = quote(parts.path or "/", safe=_PATH_SAFE)
     if parts.query:
-        path = f"{path}?{parts.query}"
+        path = f"{path}?{quote(parts.query, safe=_QUERY_SAFE)}"
     return Target(url=url, host=host, port=port or 443, path=path)
+
+
+def _embedded_ipv4(ip: ipaddress.IPv6Address) -> ipaddress.IPv4Address | None:
+    """The IPv4 address an IPv6 one carries (IPv4-mapped, 6to4 or NAT64), if any."""
+    embedded = ip.ipv4_mapped or ip.sixtofour
+    if embedded is None and ip in _NAT64:
+        embedded = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+    return embedded
+
+
+_NEVER = (
+    ("is_unspecified", "an unspecified address"),
+    ("is_loopback", "a loopback address"),
+    ("is_link_local", "a link-local address (such as the cloud metadata service)"),
+    ("is_multicast", "a multicast address"),
+)
 
 
 def address_problem(address: str, *, allow_private: bool) -> str | None:
@@ -138,24 +162,15 @@ def address_problem(address: str, *, allow_private: bool) -> str | None:
     if isinstance(ip, ipaddress.IPv6Address):
         if any(ip in net for net in _ALWAYS_REFUSED):
             return "a cloud metadata address"
-        embedded = ip.ipv4_mapped or ip.sixtofour
-        if embedded is None and ip in _NAT64:
-            embedded = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+        embedded = _embedded_ipv4(ip)
         if embedded is not None:
             return address_problem(str(embedded), allow_private=allow_private)
-    if ip.is_unspecified:
-        return "an unspecified address"
-    if ip.is_loopback:
-        return "a loopback address"
-    if ip.is_link_local:
-        return "a link-local address (such as the cloud metadata service)"
-    if ip.is_multicast:
-        return "a multicast address"
-    if isinstance(ip, ipaddress.IPv4Address) and ip == ipaddress.IPv4Address("255.255.255.255"):
+    for attribute, reason in _NEVER:
+        if getattr(ip, attribute):
+            return reason
+    if ip == ipaddress.IPv4Address("255.255.255.255"):
         return "a broadcast address"
-    if ip.is_global:
-        return None
-    if allow_private and any(ip in net for net in _PRIVATE):
+    if ip.is_global or (allow_private and any(ip in net for net in _PRIVATE)):
         return None
     return "a private or reserved network address"
 
@@ -190,7 +205,11 @@ def checked_addresses(target: Target, policy: LinkPolicy, resolver: Resolver) ->
 
 
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
-    """HTTPS to a fixed, already-checked IP, with TLS verified for the host name."""
+    """HTTPS to a fixed, already-checked IP, with TLS verified for the host name.
+
+    ``live`` is the socket in use (plain, then TLS) so a watchdog thread can shut it down
+    at the deadline, whatever phase the exchange is in.
+    """
 
     def __init__(
         self, address: str, host: str, port: int, timeout: float, context: ssl.SSLContext
@@ -198,10 +217,26 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
         super().__init__(host, port, timeout=timeout, context=context)
         self._address = address
         self._tls = context
+        self.live: socket.socket | None = None
+        self.expired = False
 
     def connect(self) -> None:
-        sock = socket.create_connection((self._address, self.port), self.timeout)
-        self.sock = self._tls.wrap_socket(sock, server_hostname=self.host)
+        raw = socket.create_connection((self._address, self.port), self.timeout)
+        self.live = raw
+        if self.expired:
+            raw.close()
+            raise TimeoutError(TOO_SLOW)
+        tls = self._tls.wrap_socket(raw, server_hostname=self.host, do_handshake_on_connect=False)
+        self.live = self.sock = tls
+        tls.do_handshake()
+
+    def expire(self) -> None:
+        """Called by the watchdog at the deadline: unblock whatever is waiting on the socket."""
+        self.expired = True
+        live = self.live
+        if live is not None:
+            with contextlib.suppress(OSError):  # already closed: nothing left to unblock
+                live.shutdown(socket.SHUT_RDWR)
 
 
 def tls_context() -> ssl.SSLContext:
@@ -218,32 +253,54 @@ def https_transport(
     policy: LinkPolicy,
 ) -> Response:
     context = tls_context()
-    failure: Exception | None = None
+    failure: BaseException | None = None
     for address in addresses:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise LinkError("The link took too long to answer")
+            raise LinkError(TOO_SLOW)
         conn = _PinnedHTTPSConnection(
             address, target.host, target.port, min(policy.connect_timeout_s, remaining), context
         )
+        # Per-read socket timeouts restart on every byte, so a server trickling its handshake
+        # or headers could hold the fetch forever; the watchdog enforces the one deadline.
+        watchdog = threading.Timer(remaining, conn.expire)
+        watchdog.daemon = True
+        watchdog.start()
         try:
-            conn.connect()
-        except ssl.SSLCertVerificationError as exc:
-            conn.close()
-            raise LinkError(f"{target.host} did not present a valid certificate") from exc
-        except OSError as exc:
-            conn.close()
-            failure = exc
-            continue
-        try:
-            return _exchange(conn, target, headers, deadline, max_bytes)
-        except (OSError, http.client.HTTPException) as exc:
-            if isinstance(exc, TimeoutError):
-                raise LinkError("The link took too long to answer") from exc
-            raise LinkError(f"The download from {target.host} failed") from exc
+            return _attempt(conn, target, headers, deadline, max_bytes)
+        except _Unreachable as exc:
+            failure = exc.__cause__
         finally:
+            watchdog.cancel()
             conn.close()
     raise LinkError(f"Could not connect to {target.host}") from failure
+
+
+class _Unreachable(Exception):
+    """This address could not be connected to; try the next one."""
+
+
+def _attempt(
+    conn: _PinnedHTTPSConnection,
+    target: Target,
+    headers: dict[str, str],
+    deadline: float,
+    max_bytes: int,
+) -> Response:
+    try:
+        conn.connect()
+    except ssl.SSLCertVerificationError as exc:
+        raise LinkError(f"{target.host} did not present a valid certificate") from exc
+    except OSError as exc:
+        if conn.expired or time.monotonic() >= deadline:
+            raise LinkError(TOO_SLOW) from exc
+        raise _Unreachable() from exc
+    try:
+        return _exchange(conn, target, headers, deadline, max_bytes)
+    except (OSError, http.client.HTTPException, UnicodeError) as exc:
+        if conn.expired or isinstance(exc, TimeoutError) or time.monotonic() >= deadline:
+            raise LinkError(TOO_SLOW) from exc
+        raise LinkError(f"The download from {target.host} failed") from exc
 
 
 def _exchange(
@@ -256,7 +313,7 @@ def _exchange(
     def remaining() -> float:
         left = deadline - time.monotonic()
         if left <= 0:
-            raise LinkError("The link took too long to answer")
+            raise LinkError(TOO_SLOW)
         return left
 
     # Keep the socket itself: http.client drops ``conn.sock`` once a response will close the
@@ -285,6 +342,10 @@ def _exchange(
         total += len(chunk)
         if total > max_bytes:
             return Response(200, hdrs, too_large=True)
+    chunked = "chunked" in hdrs.get("transfer-encoding", "").lower()
+    if declared.isdigit() and not chunked and total != int(declared):
+        # The server closed early: a partial CSV must never pass as the whole file.
+        raise LinkError(f"The download from {target.host} was cut off before the end")
     return Response(200, hdrs, b"".join(chunks))
 
 
@@ -315,7 +376,7 @@ def fetch(
         target = check_url(current)
         addresses = checked_addresses(target, policy, resolver)
         if clock() >= deadline:
-            raise LinkError("The link took too long to answer")
+            raise LinkError(TOO_SLOW)
         resp = transport(addresses, target, headers, deadline, policy.max_bytes, policy)
         if resp.status in _REDIRECTS:
             location = resp.headers.get("location", "").strip()
@@ -323,30 +384,37 @@ def fetch(
                 raise LinkError(f"The link redirected (HTTP {resp.status}) without saying where")
             current = urljoin(target.url, location)
             continue
-        if resp.status == 304:
-            return Fetched(
-                url=target.url, not_modified=True, etag=etag, last_modified=last_modified
-            )
-        if resp.status != 200:
-            raise LinkError(_status_message(resp.status, target.host))
-        encoding = resp.headers.get("content-encoding", "identity").strip().lower()
-        if encoding not in ("", "identity"):
-            raise LinkError(
-                "The server sent a compressed response; links must serve the file as is"
-            )
-        if resp.too_large or resp.body is None:
-            mb = policy.max_bytes // (1024 * 1024)
-            raise LinkError(f"The file at the link is larger than the {mb} MB limit")
-        kind = sniff_kind(resp.body, resp.headers.get("content-type", ""))
-        return Fetched(
-            url=target.url,
-            data=resp.body,
-            kind=kind,
-            filename=suggest_filename(target, resp.headers, kind),
-            etag=resp.headers.get("etag"),
-            last_modified=resp.headers.get("last-modified"),
-        )
+        return _received(resp, target, policy, etag, last_modified)
     raise LinkError(f"The link redirected more than {policy.max_redirects} times")
+
+
+def _received(
+    resp: Response,
+    target: Target,
+    policy: LinkPolicy,
+    etag: str | None,
+    last_modified: str | None,
+) -> Fetched:
+    """Turn the final (non-redirect) answer into a Fetched file, or a LinkError."""
+    if resp.status == 304:
+        return Fetched(url=target.url, not_modified=True, etag=etag, last_modified=last_modified)
+    if resp.status != 200:
+        raise LinkError(_status_message(resp.status, target.host))
+    encoding = resp.headers.get("content-encoding", "identity").strip().lower()
+    if encoding not in ("", "identity"):
+        raise LinkError("The server sent a compressed response; links must serve the file as is")
+    if resp.too_large or resp.body is None:
+        mb = policy.max_bytes // (1024 * 1024)
+        raise LinkError(f"The file at the link is larger than the {mb} MB limit")
+    kind = sniff_kind(resp.body, resp.headers.get("content-type", ""))
+    return Fetched(
+        url=target.url,
+        data=resp.body,
+        kind=kind,
+        filename=suggest_filename(target, resp.headers, kind),
+        etag=resp.headers.get("etag"),
+        last_modified=resp.headers.get("last-modified"),
+    )
 
 
 def _status_message(status: int, host: str) -> str:
@@ -393,30 +461,32 @@ def sniff_kind(data: bytes, content_type: str = "") -> str:
     return "csv"
 
 
-_DISPOSITION_NAME = re.compile(
-    r"""filename\*\s*=\s*(?:UTF-8|utf-8)''([^;]+)|filename\s*=\s*"([^"]*)"|filename\s*=\s*([^;]+)""",
-)
+_RFC5987_NAME = re.compile(r"filename\*\s*=\s*utf-8''([^;]+)", re.IGNORECASE)
+_PLAIN_NAME = re.compile(r'filename\s*=\s*(?:"([^"]*)"|([^;]+))', re.IGNORECASE)
+_DOWNLOAD_WORDS = ("pub", "export", "download", "file", "raw")
+
+
+def _disposition_name(header: str) -> str:
+    """The file name in a Content-Disposition header; the RFC 5987 form wins."""
+    encoded = _RFC5987_NAME.search(header)
+    if encoded and unquote(encoded.group(1)).strip():
+        return unquote(encoded.group(1)).strip()
+    plain = _PLAIN_NAME.search(header)
+    return (plain.group(1) or plain.group(2) or "").strip() if plain else ""
 
 
 def suggest_filename(target: Target, headers: dict[str, str], kind: str) -> str:
     """A file name for the import: the server's own, else the link's last path part."""
     ext = KIND_EXTENSION[kind]
-    name = ""
-    for m in _DISPOSITION_NAME.finditer(headers.get("content-disposition", "")):
-        candidate = unquote(m.group(1)) if m.group(1) else (m.group(2) or m.group(3) or "")
-        if candidate.strip():
-            name = candidate.strip()
-            if m.group(1):
-                break  # the RFC 5987 form wins over the plain one
+    name = _disposition_name(headers.get("content-disposition", ""))
     if not name:
         segment = target.path.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1]
         name = unquote(segment) or target.host
     stem = name.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
-    if "." in stem:
-        base, current = stem.rsplit(".", 1)
-        if f".{current.lower()}" in (ext, ".tsv", ".txt", ".xlsm", ".sqlite3", ".db"):
-            stem = base
+    base, dot, current = stem.rpartition(".")
+    if dot and f".{current.lower()}" in (ext, ".tsv", ".txt", ".xlsm", ".sqlite3", ".db"):
+        stem = base
     stem = stem.strip(" .") or target.host
-    if stem.lower() in ("pub", "export", "download", "file", "raw"):
+    if stem.lower() in _DOWNLOAD_WORDS:
         stem = target.host
     return f"{stem}{ext}"

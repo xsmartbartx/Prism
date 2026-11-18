@@ -80,6 +80,11 @@ class TestUrls:
         assert (t.host, t.port, t.path) == ("example.com", 8443, "/x/data.csv?gid=0&output=csv")
         assert check_url("https://example.com").path == "/"
 
+    def test_request_line_is_ascii(self) -> None:
+        t = check_url("https://example.com/Zürich.csv?city=Łódź&x=%20y")
+        assert t.path == "/Z%C3%BCrich.csv?city=%C5%81%C3%B3d%C5%BA&x=%20y"
+        assert t.path.isascii()
+
 
 class TestAddresses:
     @pytest.mark.parametrize(

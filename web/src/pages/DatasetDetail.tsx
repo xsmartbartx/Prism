@@ -21,8 +21,10 @@ export default function DatasetDetail() {
   const charts = useLoad<Chart[]>(`/api/v1/charts?dataset_id=${id}`);
   const author = can.author(me?.role);
   // Only authors may see the link (it can carry an access token); others never ask for it.
-  const linkRes = useLoad<{ link: DatasetLink | null; can_schedule: boolean }>(author ? `/api/v1/datasets/${id}/link` : null);
-  const link = linkRes.data?.link ?? null;
+  const linkPath = author ? `/api/v1/datasets/${id}/link` : null;
+  const linkRes = useLoad<{ link: DatasetLink | null; can_schedule: boolean }>(linkPath);
+  // Never show the previous dataset's link while this one's is loading.
+  const link = linkRes.loadedPath === linkPath ? linkRes.data?.link ?? null : null;
 
   if (error) return <ErrorBox error={error} onRetry={reload} />;
   if (!ds) return <PageLoading />;
@@ -44,6 +46,7 @@ export default function DatasetDetail() {
       afterLinkChange();
     } catch (e) {
       toast((e as Error).message, "error");
+      afterLinkChange(); // the link may be saved even if its first refresh failed
     } finally {
       setRefreshing(false);
     }
@@ -106,7 +109,7 @@ export default function DatasetDetail() {
 
       {tab === "overview" && v && (
         <div className="stack">
-          {link && <SourceLinkCard datasetId={id} link={link} canSchedule={!!linkRes.data?.can_schedule} onChange={afterLinkChange} />}
+          {link && <SourceLinkCard key={`${id}:${link.url}`} datasetId={id} link={link} canSchedule={!!linkRes.data?.can_schedule} onChange={afterLinkChange} />}
           <div className="table-wrap">
             <table className="table">
               <thead>

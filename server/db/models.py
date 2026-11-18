@@ -60,6 +60,9 @@ def new_id() -> str:
     return uuid.uuid4().hex
 
 
+DATASET_FK = "datasets.id"
+
+
 class Base(DeclarativeBase):
     type_annotation_map = {dict[str, Any]: JSON, list[Any]: JSON}
 
@@ -248,7 +251,7 @@ class DatasetLink(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     dataset_id: Mapped[str] = mapped_column(
-        ForeignKey("datasets.id", ondelete="CASCADE"), unique=True
+        ForeignKey(DATASET_FK, ondelete="CASCADE"), unique=True
     )
     workspace_id: Mapped[str] = mapped_column(
         ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
@@ -259,6 +262,7 @@ class DatasetLink(Base):
     owner_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     next_run_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True, index=True)
     lease_until: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
+    lease_token: Mapped[str | None] = mapped_column(String(32), nullable=True)
     last_run_at: Mapped[datetime | None] = mapped_column(UTCDateTime(), nullable=True)
     last_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -276,7 +280,7 @@ class Binding(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     dataset_id: Mapped[str] = mapped_column(
-        ForeignKey("datasets.id", ondelete="CASCADE"), index=True
+        ForeignKey(DATASET_FK, ondelete="CASCADE"), index=True
     )
     version: Mapped[int] = mapped_column(Integer)
     document: Mapped[dict[str, Any]] = mapped_column(JSON)
@@ -290,7 +294,7 @@ class DatasetVersion(Base):
     __table_args__ = (UniqueConstraint("dataset_id", "version"),)
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
-    dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"))
+    dataset_id: Mapped[str] = mapped_column(ForeignKey(DATASET_FK, ondelete="CASCADE"))
     version: Mapped[int] = mapped_column(Integer)
     binding_id: Mapped[str] = mapped_column(String(32))
     import_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -316,7 +320,7 @@ class Chart(Base):
         ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
     )
     dataset_id: Mapped[str] = mapped_column(
-        ForeignKey("datasets.id", ondelete="CASCADE"), index=True
+        ForeignKey(DATASET_FK, ondelete="CASCADE"), index=True
     )
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="")
