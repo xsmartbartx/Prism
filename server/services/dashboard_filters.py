@@ -180,11 +180,7 @@ def bucket_end(start: date, grain: str) -> date:
     return start
 
 
-def parse_cross_filter(params: Iterable[tuple[str, str]]) -> tuple[Selection | None, str | None]:
-    """Read ``xf`` / ``xv`` / ``xg`` / ``xc`` into a selection and the clicked chart's id.
-
-    Like declared filters, anything malformed is ignored: the dashboard still shows.
-    """
+def _read_cross(params: Iterable[tuple[str, str]]) -> tuple[str, str, str | None, list[str]]:
     field, grain, source = "", "", None
     values: list[str] = []
     for key, value in params:
@@ -198,15 +194,24 @@ def parse_cross_filter(params: Iterable[tuple[str, str]]) -> tuple[Selection | N
             v = value.strip()
             if v and len(v) <= MAX_VALUE_CHARS and v not in values and len(values) < MAX_SELECTED:
                 values.append(v)
+    return field, grain, source, values
+
+
+def parse_cross_filter(params: Iterable[tuple[str, str]]) -> tuple[Selection | None, str | None]:
+    """Read ``xf`` / ``xv`` / ``xg`` / ``xc`` into a selection and the clicked chart's id.
+
+    Like declared filters, anything malformed is ignored: the dashboard still shows.
+    """
+    field, grain, source, values = _read_cross(params)
     if not field or len(field) > MAX_VALUE_CHARS or not values:
         return None, source
-    if grain in GRAINS:
-        starts = sorted(d for d in (_iso_date(v) for v in values) if d)
-        if not starts:
-            return None, source
-        end = bucket_end(starts[-1], grain)
-        return Selection(CROSS, field, "date_range", field, start=starts[0], end=end), source
-    return Selection(CROSS, field, "values", field, values=tuple(values)), source
+    if grain not in GRAINS:
+        return Selection(CROSS, field, "values", field, values=tuple(values)), source
+    starts = sorted(d for d in (_iso_date(v) for v in values) if d)
+    if not starts:
+        return None, source
+    end = bucket_end(starts[-1], grain)
+    return Selection(CROSS, field, "date_range", field, start=starts[0], end=end), source
 
 
 def apply_selections(

@@ -91,6 +91,7 @@ Click a bar, a point on a line or a slice of a donut to filter the **other** cha
 - On a time axis grouped by week, month, quarter or year, a click selects that whole period.
 - Charts without the clicked field say *Not filtered by …*, as with dashboard filters. Click selections combine with the dashboard filters.
 - The selection is in the page address too, so a copied link reproduces it. KPI cards, tables and scatter plots are not clickable, nor is a donut's *Other* slice.
+- With a keyboard, **Tab** moves through the bars, points and slices (on charts with up to 60 of them) and **Enter** or **Space** selects one. Screen readers announce each one with its value.
 
 ## Share
 

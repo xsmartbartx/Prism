@@ -61,8 +61,8 @@ export function CrossFilterChip({ cross, onClear }: Readonly<{ cross: CrossFilte
   const shown = cross.values.slice(0, 3).map((v) => crossValueLabel(v, cross.grain)).join(", ");
   const more = cross.values.length > 3 ? ` +${cross.values.length - 3}` : "";
   return (
-    <span className="cross-chip" role="status">
-      <span className="muted">{cross.field}:</span> <strong>{shown}{more}</strong>
+    <span className="cross-chip">
+      <output aria-live="polite"><span className="muted">{cross.field}:</span> <strong>{shown}{more}</strong></output>
       <button type="button" className="btn btn-ghost btn-icon btn-sm" onClick={onClear} aria-label={`Clear the ${cross.field} selection`} title="Clear (Esc)"><X size={13} /></button>
     </span>
   );

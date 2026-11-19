@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowDown, ArrowUp, Check, Pencil, Plus, Share2, Trash2, X } from "lucide-react";
 import { can, del, get, getText, put, type Chart, type Dashboard, type DashboardFilter, type Tile, type TileRender } from "../api";
@@ -13,12 +13,15 @@ import { ChartSvg, Confirm, Empty, ErrorBox, Modal, PageLoading } from "../compo
  */
 interface Pick { field: string; grain: string | null; value: string; additive: boolean }
 
-function TileChart({ dashboardId, id, theme, query, live, highlight, onPick }: {
+/** Up to this many marks become keyboard stops; a denser chart is left to the dashboard filters. */
+const MAX_FOCUSABLE_MARKS = 60;
+
+function TileChart({ dashboardId, id, theme, query, live, highlight, onPick }: Readonly<{
   dashboardId: string; id: string; theme: string; query: string; live: boolean;
   /** Values selected by clicking this tile: shown highlighted, the rest dimmed. */
   highlight?: string[];
   onPick?: (pick: Pick) => void;
-}) {
+}>) {
   const [svg, setSvg] = useState<string | null>(null);
   const [skipped, setSkipped] = useState<string[]>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -45,25 +48,42 @@ function TileChart({ dashboardId, id, theme, query, live, highlight, onPick }: {
     const el = box.current?.querySelector(".chart-svg");
     if (!el) return;
     const picking = !!highlight?.length;
+    const marks = [...el.querySelectorAll<SVGElement>(".pick")];
+    // Marks act as toggle buttons: reachable with Tab, announced with their tooltip text.
+    const focusable = !!onPick && marks.length <= MAX_FOCUSABLE_MARKS;
     el.classList.toggle("picking", picking);
-    el.querySelectorAll(".pick").forEach((m) => m.classList.toggle("picked", picking && !!highlight?.includes(m.getAttribute("data-pick") ?? "")));
-  }, [svg, highlight]);
+    for (const m of marks) {
+      const picked = picking && !!highlight?.includes(m.dataset.pick ?? "");
+      m.classList.toggle("picked", picked);
+      if (focusable) {
+        m.setAttribute("tabindex", "0");
+        m.setAttribute("role", "button");
+        m.setAttribute("aria-pressed", String(picked));
+        m.setAttribute("aria-label", `${m.querySelector("title")?.textContent ?? m.dataset.pick}. Filter the other charts`);
+      }
+    }
+  }, [svg, highlight, onPick]);
 
-  const onClick = (e: MouseEvent<HTMLDivElement>) => {
-    const mark = (e.target as Element).closest?.(".pick");
-    const root = box.current?.querySelector("svg[data-pick-field]");
-    const value = mark?.getAttribute("data-pick");
-    const field = root?.getAttribute("data-pick-field");
-    if (!onPick || !value || !field) return;
-    onPick({ field, grain: root?.getAttribute("data-pick-grain") ?? null, value, additive: e.shiftKey || e.metaKey || e.ctrlKey });
+  const pick = (target: EventTarget, additive: boolean): boolean => {
+    const mark = (target as Element).closest?.<SVGElement>(".pick");
+    const root = box.current?.querySelector<SVGElement>("svg[data-pick-field]");
+    const value = mark?.dataset.pick;
+    const field = root?.dataset.pickField;
+    if (!onPick || !value || !field) return false;
+    onPick({ field, grain: root?.dataset.pickGrain ?? null, value, additive });
+    return true;
+  };
+  const onClick = (e: MouseEvent<HTMLDivElement>) => { pick(e.target, e.shiftKey || e.metaKey || e.ctrlKey); };
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if ((e.key === "Enter" || e.key === " ") && pick(e.target, e.shiftKey || e.metaKey || e.ctrlKey)) e.preventDefault();
   };
 
   if (err) return <div className="muted small">{err}</div>;
   return (
     <>
       {skipped.length > 0 && <p className="tile-note">Not filtered by {skipped.join(", ")}: this chart's data has no such field.</p>}
-      {/* Clicking a mark is a shortcut; the dashboard filters remain the keyboard path. */}
-      <div ref={box} className={onPick ? "pickable" : undefined} onClick={onClick}>
+      {/* Clicks and Enter/Space on the chart's marks (which are focusable buttons) bubble up here. */}
+      <div ref={box} className={onPick ? "pickable" : undefined} onClick={onClick} onKeyDown={onKeyDown}>
         <ChartSvg svg={svg} minHeight={220} />
       </div>
     </>
@@ -92,6 +112,10 @@ export default function DashboardView() {
   // The tile that was clicked keeps all its marks (highlighting the choice), so its own query
   // leaves the cross-filter out and it does not reload on every click.
   const sourceQuery = filterQuery(withoutCross(params));
+  const tileQuery = (chartId: string): string => {
+    if (edit) return "";
+    return cross?.source === chartId ? sourceQuery : fq;
+  };
 
   useEffect(() => {
     if (!cross) return;
@@ -215,7 +239,7 @@ export default function DashboardView() {
                 </div>
                 <div className="tile-body">
                   <TileChart dashboardId={data.id} id={tile.chart_id} theme={t}
-                    query={edit ? "" : cross?.source === tile.chart_id ? sourceQuery : fq}
+                    query={tileQuery(tile.chart_id)}
                     live={!edit && data.layout.some((x) => x.chart_id === tile.chart_id)}
                     highlight={cross?.source === tile.chart_id ? cross.values : undefined}
                     onPick={edit ? undefined : (pick) => setParams(pickedParams(params, { chartId: tile.chart_id, ...pick }))} />
