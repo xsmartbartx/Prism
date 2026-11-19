@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from datetime import date, datetime
 from typing import Any
 
 from presentation.render.format import format_category, format_number
@@ -71,6 +72,30 @@ def _xml(s: object) -> str:
     )
 
 
+def pick_value(v: object) -> str | None:
+    """How a category value is written on a clickable mark (``data-pick``), or None.
+
+    Dashboards read it back as a cross-filter value, so it is the raw value — an ISO date,
+    ``true``/``false``, an unformatted number — never the label shown on the axis.
+    """
+    if v is None:
+        return None
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, datetime):
+        return v.date().isoformat()
+    if isinstance(v, date):
+        return v.isoformat()
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return str(v)
+
+
+def _pick(v: object) -> str:
+    raw = pick_value(v)
+    return f' class="pick" data-pick="{_xml(raw)}"' if raw is not None else ""
+
+
 def _f(v: float) -> str:
     """Compact, deterministic coordinate formatting."""
     r = round(v, 1)
@@ -114,13 +139,27 @@ class SvgRenderer:
     # Frame
     # ------------------------------------------------------------------
 
-    def _open(self, spec: ViewSpec, w: float, h: float, theme: dict[str, str]) -> str:
+    def _open(
+        self,
+        spec: ViewSpec,
+        w: float,
+        h: float,
+        theme: dict[str, str],
+        pick_field: str | None = None,
+    ) -> str:
         title = spec.title or "Chart"
         desc = spec.description or self._auto_desc(spec)
+        # Charts whose marks stand for one category say which field the marks' values are of,
+        # so a dashboard can turn a click into a cross-filter.
+        pick = ""
+        if pick_field:
+            pick = f' data-pick-field="{_xml(pick_field)}"'
+            if spec.time_grain:
+                pick += f' data-pick-grain="{_xml(spec.time_grain)}"'
         out = (
             f'<svg xmlns="http://www.w3.org/2000/svg" width="{_f(w)}" height="{_f(h)}"'
             f' viewBox="0 0 {_f(w)} {_f(h)}" font-family="{_FONT}" role="img"'
-            f' aria-labelledby="t d">'
+            f' aria-labelledby="t d"{pick}>'
             f'<title id="t">{_xml(title)}</title><desc id="d">{_xml(desc)}</desc>'
             f'<rect width="100%" height="100%" fill="{theme["bg"]}"/>'
         )
@@ -289,7 +328,7 @@ class SvgRenderer:
             frac = (v - vmin) / (vmax - vmin)
             return left + frac * pw if horizontal else top + ph - frac * ph
 
-        out = self._open(spec, w, h, theme) + legend_svg
+        out = self._open(spec, w, h, theme, xe.field if xe else None) + legend_svg
         # Grid + value axis labels
         for t, lbl in zip(ticks, tick_labels, strict=True):
             if t < vmin - 1e-9 or t > vmax + 1e-9:
@@ -412,7 +451,7 @@ class SvgRenderer:
                 if horizontal:
                     out += (
                         f'<rect x="{_f(lo)}" y="{_f(off)}" width="{_f(size)}"'
-                        f' height="{_f(max(bw - 1, 1))}" fill="{s.color}">'
+                        f' height="{_f(max(bw - 1, 1))}" fill="{s.color}"{_pick(cats[i])}>'
                         f"<title>{_xml(tip)}</title></rect>"
                     )
                     if spec.show_values and not stacked:
@@ -424,7 +463,7 @@ class SvgRenderer:
                 else:
                     out += (
                         f'<rect x="{_f(off)}" y="{_f(lo)}" width="{_f(max(bw - 1, 1))}"'
-                        f' height="{_f(size)}" fill="{s.color}">'
+                        f' height="{_f(size)}" fill="{s.color}"{_pick(cats[i])}>'
                         f"<title>{_xml(tip)}</title></rect>"
                     )
                     if spec.show_values and not stacked:
@@ -491,7 +530,8 @@ class SvgRenderer:
                 r = 2 if dense else 3.5
                 out += (
                     f'<circle cx="{_f(x)}" cy="{_f(y)}" r="{r}" fill="{s.color}"'
-                    f' stroke="{theme["bg"]}" stroke-width="1"><title>{_xml(tip)}</title></circle>'
+                    f' stroke="{theme["bg"]}" stroke-width="1"{_pick(cats[i])}>'
+                    f"<title>{_xml(tip)}</title></circle>"
                 )
                 if spec.show_values and not dense:
                     out += (
@@ -596,33 +636,33 @@ class SvgRenderer:
         ye = spec.encoding_for(EncodingChannel.Y)
         if not ce or not ye:
             return self._empty(spec, theme)
-        slices: list[tuple[str, float]] = []
+        slices: list[tuple[str, float, object]] = []
         for row in rows:
             v = _num_or_none(row.get(ye.field))
             if v is not None and v > 0:
-                slices.append((self._cat(spec, row.get(ce.field)), v))
+                slices.append((self._cat(spec, row.get(ce.field)), v, row.get(ce.field)))
         if not slices:
             return self._empty(spec, theme)
         slices.sort(key=lambda s: -s[1])
         if len(slices) > 8:
-            other = sum(v for _, v in slices[7:])
-            slices = [*slices[:7], ("Other", other)]
-        total = sum(v for _, v in slices)
+            other = sum(v for _, v, _ in slices[7:])
+            slices = [*slices[:7], ("Other", other, None)]  # "Other" is not one value: no pick
+        total = sum(v for _, v, _ in slices)
         w, h = float(max(spec.width, 200)), float(max(spec.height, 160))
         top = 40.0 if spec.title else 16.0
         legend_w = min(w * 0.45, 240.0)
         size = min(w - legend_w - 32, h - top - 16)
         r = max(size / 2, 20)
         cx, cy = 16 + r, top + (h - top - 16) / 2
-        out = self._open(spec, w, h, theme)
+        out = self._open(spec, w, h, theme, ce.field)
         angle = -math.pi / 2
-        for i, (name, v) in enumerate(slices):
+        for i, (name, v, raw) in enumerate(slices):
             frac = v / total
             color = _COLORS[i % len(_COLORS)]
             tip = f"{name}: {self._fmt(spec, v)} ({frac:.1%})"
             if frac >= 0.9999:
                 out += (
-                    f'<circle cx="{_f(cx)}" cy="{_f(cy)}" r="{_f(r)}" fill="{color}">'
+                    f'<circle cx="{_f(cx)}" cy="{_f(cy)}" r="{_f(r)}" fill="{color}"{_pick(raw)}>'
                     f"<title>{_xml(tip)}</title></circle>"
                 )
             else:
@@ -633,7 +673,7 @@ class SvgRenderer:
                 out += (
                     f'<path d="M{_f(cx)},{_f(cy)} L{_f(x1)},{_f(y1)} A{_f(r)},{_f(r)} 0 {large} 1'
                     f' {_f(x2)},{_f(y2)} Z" fill="{color}" stroke="{theme["bg"]}"'
-                    f' stroke-width="1.5"><title>{_xml(tip)}</title></path>'
+                    f' stroke-width="1.5"{_pick(raw)}><title>{_xml(tip)}</title></path>'
                 )
                 angle = a2
         out += f'<circle cx="{_f(cx)}" cy="{_f(cy)}" r="{_f(r * 0.55)}" fill="{theme["bg"]}"/>'
@@ -645,7 +685,7 @@ class SvgRenderer:
         )
         lx = cx + r + 24
         ly = cy - len(slices) * 10 + 6
-        for i, (name, v) in enumerate(slices):
+        for i, (name, v, _) in enumerate(slices):
             yy = ly + i * 20
             out += (
                 f'<rect x="{_f(lx)}" y="{_f(yy - 9)}" width="10" height="10" rx="2"'
