@@ -214,3 +214,53 @@ def test_share_form_keeps_saved_selections(client: TestClient) -> None:
     page = TestClient(client.app).get(f"/s/{share['token']}?fv0=Mars&ff1=2025-12-01&ft1=2026-09-30").text
     assert 'value="Mars" checked' in page  # not an option any more, still submitted on Apply
     assert 'min="2025-12-01"' in page and 'max="2026-09-30"' in page  # the inputs stay valid
+
+
+def test_cross_filter_from_a_click(client: TestClient) -> None:
+    a, b, dash = _setup(client)
+    did = dash["id"]
+    sales = next(d["id"] for d in client.get("/api/v1/datasets").json() if d["name"] == "Sales")
+    orders = _bar(client, sales, "Order ID", "Revenue")
+    r = client.put(f"/api/v1/dashboards/{did}", headers=H, json={
+        "name": "Sales", "layout": [{"chart_id": a}, {"chart_id": b}, {"chart_id": orders}],
+    })
+    assert r.status_code == 200, r.text
+
+    plain = _tile(client, did, a)
+    assert 'data-pick-field="Region"' in plain["svg"] and 'data-pick="APAC"' in plain["svg"]
+
+    click = f"&xf=Region&xv=EU&xc={a}"
+    eu_orders = _tile(client, did, orders, click)
+    assert eu_orders["applied"] == ["Region"]
+    assert "A-1001" in eu_orders["svg"] and "A-1002" not in eu_orders["svg"]
+    source = _tile(client, did, a, click)  # the clicked tile keeps every bar
+    assert source["applied"] == [] and "APAC" in source["svg"]
+    units = _tile(client, did, b, click)  # no Region in that dataset
+    assert units["skipped"] == ["Region"]
+
+    # A month bar selects that month's dates on the other tiles.
+    january = _tile(client, did, a, f"&xf=Order Date&xv=2026-01-01&xg=month&xc={b}")
+    assert january["applied"] == ["Order Date"]
+    assert "APAC" not in january["svg"] and "US" in january["svg"]
+
+    # Cross-filters combine with the declared filters.
+    both = _tile(client, did, orders, f"{click}&ft1=2026-01-31")
+    assert both["applied"] == ["Ordered", "Region"]
+
+
+def test_a_bucketed_axis_selects_its_whole_bucket(client: TestClient) -> None:
+    a, _, dash = _setup(client)
+    units = next(d["id"] for d in client.get("/api/v1/datasets").json() if d["name"] == "Units")
+    body = {
+        "dataset_id": units,
+        "name": "Units by month",
+        "query": {**UNITS_CHART["query"], "time_grain": {"Order Date": "month"}},
+        "view": UNITS_CHART["view"],  # says nothing about the grain, as API-made charts may not
+    }
+    monthly = client.post("/api/v1/charts", json=body, headers=H).json()["id"]
+    did = dash["id"]
+    client.put(f"/api/v1/dashboards/{did}", headers=H,
+               json={"name": "Sales", "layout": [{"chart_id": a}, {"chart_id": monthly}]})
+    svg = _tile(client, did, monthly)["svg"]
+    assert 'data-pick-grain="month"' in svg and 'data-pick="2026-02-01"' in svg
+    assert "Feb 2026" in svg  # and the buckets are labelled as months

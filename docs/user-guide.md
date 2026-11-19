@@ -83,6 +83,15 @@ A filter applies to every chart whose dataset has a field of that name. Matching
 
 The picked values are part of the page address, so copying the link shares the filtered view. Shared dashboard links (`/s/…`) show the same filters as a simple form; viewers can filter without signing in, and the page needs no JavaScript.
 
+### Click to filter
+
+Click a bar, a point on a line or a slice of a donut to filter the **other** charts on the dashboard to that value. No filter has to be set up first, and it works on any field. The chart you clicked keeps all its bars and highlights your choice; a chip above the charts (for example *Region: EU*) shows what is selected.
+
+- Click the same mark again, press **Esc** or use the chip's **×** to clear it. Clicking another mark replaces the selection; hold **Shift** (or **Ctrl**/**⌘**) to add or remove values.
+- On a time axis grouped by week, month, quarter or year, a click selects that whole period.
+- Charts without the clicked field say *Not filtered by …*, as with dashboard filters. Click selections combine with the dashboard filters.
+- The selection is in the page address too, so a copied link reproduces it. KPI cards, tables and scatter plots are not clickable, nor is a donut's *Other* slice.
+
 ## Share
 
 **Share** on a chart or dashboard creates a public, read-only link:

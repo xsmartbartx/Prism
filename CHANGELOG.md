@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Click to filter on dashboards: clicking a bar, line point or donut slice filters the other charts on the dashboard to that value (on any field, no filter set up needed). The clicked chart keeps its bars and highlights the choice; a chip shows the selection, and Esc, a second click or × clears it. Shift/Ctrl/⌘-click selects several values; on a time axis grouped by week, month, quarter or year a click selects the whole period. The selection is part of the page address, combines with dashboard filters, and is applied as bound parameters like any filter.
+- Charts whose query groups the category axis by time now label it by that grain even when the saved view did not say so (charts made through the API).
+
 ## 1.3.0 — 2026-11-18
 
 - Import from a link: paste an `https://` link to a CSV, Excel, Parquet or SQLite file (a published Google Sheet, a raw GitHub file, an export URL) and Prism downloads it into the usual review. The dataset remembers the link: **Refresh now** downloads it again, and a schedule (every hour, day or week; Pro and Business) keeps it current. An unchanged file (`304 Not Modified`, or identical bytes) makes no new version; a changed one goes through the same contract and drift checks as an upload. Failures are shown on the dataset and audited, and a schedule pauses after five in a row or when its owner loses access.

@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowDown, ArrowUp, Check, Pencil, Plus, Share2, Trash2, X } from "lucide-react";
 import { can, del, get, getText, put, type Chart, type Dashboard, type DashboardFilter, type Tile, type TileRender } from "../api";
 import { effectiveTheme, useApp, useLoad } from "../app-state";
-import { FilterBar, FilterEditor, filterQuery } from "../components/DashboardFilters";
+import { CrossFilterChip, FilterBar, FilterEditor, filterQuery, pickedParams, readCross, withoutCross } from "../components/DashboardFilters";
 import ShareDialog from "../components/ShareDialog";
 import { ChartSvg, Confirm, Empty, ErrorBox, Modal, PageLoading } from "../components/ui";
 
@@ -11,14 +11,22 @@ import { ChartSvg, Confirm, Empty, ErrorBox, Modal, PageLoading } from "../compo
  * One tile. A saved tile renders through the dashboard, so the viewer's filters narrow it;
  * a tile just added in the editor (not saved yet) renders on its own.
  */
-function TileChart({ dashboardId, id, theme, query, live }: { dashboardId: string; id: string; theme: string; query: string; live: boolean }) {
+interface Pick { field: string; grain: string | null; value: string; additive: boolean }
+
+function TileChart({ dashboardId, id, theme, query, live, highlight, onPick }: {
+  dashboardId: string; id: string; theme: string; query: string; live: boolean;
+  /** Values selected by clicking this tile: shown highlighted, the rest dimmed. */
+  highlight?: string[];
+  onPick?: (pick: Pick) => void;
+}) {
   const [svg, setSvg] = useState<string | null>(null);
   const [skipped, setSkipped] = useState<string[]>([]);
   const [err, setErr] = useState<string | null>(null);
+  const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     // Selections can change faster than tiles render: only the latest request may update the tile.
+    // The previous chart stays up (dimmed) until the new one arrives, so clicks don't flash.
     let current = true;
-    setSvg(null);
     setErr(null);
     if (live) {
       get<TileRender>(`/api/v1/dashboards/${dashboardId}/charts/${id}/render?theme=${theme}${query}`)
@@ -32,11 +40,32 @@ function TileChart({ dashboardId, id, theme, query, live }: { dashboardId: strin
     }
     return () => { current = false; };
   }, [dashboardId, id, theme, query, live]);
+
+  useEffect(() => {
+    const el = box.current?.querySelector(".chart-svg");
+    if (!el) return;
+    const picking = !!highlight?.length;
+    el.classList.toggle("picking", picking);
+    el.querySelectorAll(".pick").forEach((m) => m.classList.toggle("picked", picking && !!highlight?.includes(m.getAttribute("data-pick") ?? "")));
+  }, [svg, highlight]);
+
+  const onClick = (e: MouseEvent<HTMLDivElement>) => {
+    const mark = (e.target as Element).closest?.(".pick");
+    const root = box.current?.querySelector("svg[data-pick-field]");
+    const value = mark?.getAttribute("data-pick");
+    const field = root?.getAttribute("data-pick-field");
+    if (!onPick || !value || !field) return;
+    onPick({ field, grain: root?.getAttribute("data-pick-grain") ?? null, value, additive: e.shiftKey || e.metaKey || e.ctrlKey });
+  };
+
   if (err) return <div className="muted small">{err}</div>;
   return (
     <>
       {skipped.length > 0 && <p className="tile-note">Not filtered by {skipped.join(", ")}: this chart's data has no such field.</p>}
-      <ChartSvg svg={svg} minHeight={220} />
+      {/* Clicking a mark is a shortcut; the dashboard filters remain the keyboard path. */}
+      <div ref={box} className={onPick ? "pickable" : undefined} onClick={onClick}>
+        <ChartSvg svg={svg} minHeight={220} />
+      </div>
     </>
   );
 }
@@ -59,6 +88,17 @@ export default function DashboardView() {
   const editable = can.explore(me?.role);
   const t = effectiveTheme(theme);
   const fq = filterQuery(params);
+  const cross = edit ? null : readCross(params);
+  // The tile that was clicked keeps all its marks (highlighting the choice), so its own query
+  // leaves the cross-filter out and it does not reload on every click.
+  const sourceQuery = filterQuery(withoutCross(params));
+
+  useEffect(() => {
+    if (!cross) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setParams(withoutCross(params)); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [cross, params, setParams]);
 
   useEffect(() => {
     if (!data) return;
@@ -140,8 +180,11 @@ export default function DashboardView() {
           <FilterEditor chartIds={layout.map((x) => x.chart_id)} filters={filters} onChange={setFilters} />
         </div>
       ) : (
-        data.filters.length > 0 && layout.length > 0 && (
-          <FilterBar dashboardId={data.id} filters={data.filters} params={params} setParams={setParams} />
+        layout.length > 0 && (data.filters.length > 0 || cross) && (
+          <div className="filter-row">
+            {data.filters.length > 0 && <FilterBar dashboardId={data.id} filters={data.filters} params={params} setParams={setParams} />}
+            {cross && <CrossFilterChip cross={cross} onClear={() => setParams(withoutCross(params))} />}
+          </div>
         )
       )}
 
@@ -171,8 +214,11 @@ export default function DashboardView() {
                   )}
                 </div>
                 <div className="tile-body">
-                  <TileChart dashboardId={data.id} id={tile.chart_id} theme={t} query={edit ? "" : fq}
-                    live={!edit && data.layout.some((x) => x.chart_id === tile.chart_id)} />
+                  <TileChart dashboardId={data.id} id={tile.chart_id} theme={t}
+                    query={edit ? "" : cross?.source === tile.chart_id ? sourceQuery : fq}
+                    live={!edit && data.layout.some((x) => x.chart_id === tile.chart_id)}
+                    highlight={cross?.source === tile.chart_id ? cross.values : undefined}
+                    onPick={edit ? undefined : (pick) => setParams(pickedParams(params, { chartId: tile.chart_id, ...pick }))} />
                 </div>
               </div>
             );

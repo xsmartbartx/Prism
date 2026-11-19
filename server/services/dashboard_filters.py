@@ -12,13 +12,23 @@ encoding works for the app's API and for a share page's HTML form without JavaSc
 
     fv<i>=<value>   (repeatable)   a "values" filter: keep rows whose field is one of these
     ff<i>=<date>    ft<i>=<date>   a "date_range" filter: from / to, inclusive, ISO dates
+
+A cross-filter is what clicking a bar, slice or point in one tile sets: the same kind of
+narrowing, on any field, without a declared filter. It applies to every tile except the one
+that was clicked (which highlights the choice instead):
+
+    xf=<field>  xv=<value> (repeatable)  [xg=<time grain>]  xc=<chart id of the clicked tile>
+
+With ``xg`` the value is the first day of a calendar bucket (a month bar, say) and the
+cross-filter becomes that bucket's date range.
 """
 
 from __future__ import annotations
 
+import calendar
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from data.query import QuerySpec
@@ -150,6 +160,53 @@ def parse_selections(
             if start or end:
                 out.append(Selection(i, field, kind, label, start=start, end=end))
     return out
+
+
+GRAINS = ("day", "week", "month", "quarter", "year")
+CROSS = -1  # Selection.index of a cross-filter (it belongs to no declared filter)
+
+
+def bucket_end(start: date, grain: str) -> date:
+    """The last day of the calendar bucket that starts on ``start``."""
+    if grain == "week":
+        return start + timedelta(days=6)
+    if grain in ("month", "quarter"):
+        month = start.month + (2 if grain == "quarter" else 0)
+        year = start.year + (month - 1) // 12
+        month = (month - 1) % 12 + 1
+        return date(year, month, calendar.monthrange(year, month)[1])
+    if grain == "year":
+        return date(start.year, 12, 31)
+    return start
+
+
+def parse_cross_filter(params: Iterable[tuple[str, str]]) -> tuple[Selection | None, str | None]:
+    """Read ``xf`` / ``xv`` / ``xg`` / ``xc`` into a selection and the clicked chart's id.
+
+    Like declared filters, anything malformed is ignored: the dashboard still shows.
+    """
+    field, grain, source = "", "", None
+    values: list[str] = []
+    for key, value in params:
+        if key == "xf":
+            field = value.strip()
+        elif key == "xg":
+            grain = value.strip()
+        elif key == "xc":
+            source = value.strip() or None
+        elif key == "xv":
+            v = value.strip()
+            if v and len(v) <= MAX_VALUE_CHARS and v not in values and len(values) < MAX_SELECTED:
+                values.append(v)
+    if not field or len(field) > MAX_VALUE_CHARS or not values:
+        return None, source
+    if grain in GRAINS:
+        starts = sorted(d for d in (_iso_date(v) for v in values) if d)
+        if not starts:
+            return None, source
+        end = bucket_end(starts[-1], grain)
+        return Selection(CROSS, field, "date_range", field, start=starts[0], end=end), source
+    return Selection(CROSS, field, "values", field, values=tuple(values)), source
 
 
 def apply_selections(

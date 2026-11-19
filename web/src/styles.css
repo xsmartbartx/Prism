@@ -300,7 +300,14 @@ table.table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tile-note { margin: 0 0 6px; font-size: 12px; color: var(--text-3); }
 
 /* ---------- Dashboard filters ---------- */
-.filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; }
+.filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 16px; }
+.filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 0; }
+.cross-chip { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 2px 0 10px; font-size: 13px; border: 1px solid var(--accent); background: var(--accent-soft); border-radius: 999px; max-width: 100%; }
+.cross-chip strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
+/* Click a bar, point or slice in a dashboard tile to cross-filter the other tiles. */
+.pickable .chart-svg .pick { cursor: pointer; transition: opacity .15s; }
+.pickable .chart-svg .pick:hover { opacity: .8; }
+.chart-svg.picking .pick:not(.picked) { opacity: .28; }
 .filter-ctl { position: relative; display: inline-flex; align-items: center; gap: 6px; }
 .filter-dates { padding: 0 4px 0 10px; height: 28px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
 .filter-dates .input { border: 0; background: transparent; padding: 0 4px; width: 128px; }

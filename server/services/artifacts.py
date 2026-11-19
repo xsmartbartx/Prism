@@ -17,7 +17,7 @@ from data.load.store import DatasetStore
 from data.query import QuerySpec
 from data.query.spec import AggFunction, AggregationSpec, FilterSpec, SortSpec
 from presentation.render.svg_renderer import SvgRenderer
-from presentation.spec.view_spec import ViewSpec, validate_view
+from presentation.spec.view_spec import EncodingChannel, MarkType, ViewSpec, validate_view
 from server.db.models import (
     Chart,
     Dashboard,
@@ -222,8 +222,14 @@ class ArtifactService:
         overrides: dict[str, Any] | None = None,
     ) -> RenderedChart:
         outcome = self.validate_chart(s, actor, ds, query, view)
-        if overrides:
-            view = view.model_copy(update=overrides)
+        update = dict(overrides or {})
+        grain = _category_grain(query, view)
+        if grain and not view.time_grain:
+            # The query buckets the category axis by time but the view does not say so (charts
+            # saved through the API): label the buckets, and let a click select the whole bucket.
+            update["time_grain"] = grain
+        if update:
+            view = view.model_copy(update=update)
         svg = self.renderer.render(view, list(outcome.result.rows))
         return RenderedChart(svg=svg, outcome=outcome, view=view)
 
@@ -716,3 +722,14 @@ def _option_text(value: Any) -> str:
     if hasattr(value, "isoformat"):
         return str(value.isoformat())
     return str(value)
+
+
+def _category_grain(query: QuerySpec, view: ViewSpec) -> str | None:
+    """The time grain the query applies to the chart's category field, if any."""
+    enc = view.encoding_for(EncodingChannel.X)
+    if view.mark == MarkType.PIE:
+        enc = view.encoding_for(EncodingChannel.COLOR) or enc
+    if enc is None:
+        return None
+    grain = query.time_grain.get(enc.field)
+    return grain.value if grain is not None else None

@@ -2,8 +2,71 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Filter, Plus, X } from "lucide-react";
 import { get, post, type DashboardFilter, type FilterField, type FilterOptions } from "../api";
 
-/** URL parameters that carry filter selections: fv<i> (values), ff<i> / ft<i> (date from / to). */
-export const FILTER_PARAM = /^f[vft]\d+$/;
+/**
+ * URL parameters that carry filter selections: fv<i> (values), ff<i> / ft<i> (date from / to),
+ * and the cross-filter a click in a tile sets: xf (field), xv (values), xg (time grain), xc (clicked chart).
+ */
+export const FILTER_PARAM = /^(f[vft]\d+|x[fvgc])$/;
+const CROSS_KEYS = ["xf", "xv", "xg", "xc"];
+
+export interface CrossFilter { field: string; values: string[]; grain: string | null; source: string }
+
+export function readCross(params: URLSearchParams): CrossFilter | null {
+  const field = params.get("xf");
+  const values = params.getAll("xv").filter(Boolean);
+  const source = params.get("xc");
+  if (!field || !values.length || !source) return null;
+  return { field, values, grain: params.get("xg"), source };
+}
+
+/** The next URL after clicking a mark: select it, add/remove it (modifier key), or clear it. */
+export function pickedParams(params: URLSearchParams, pick: { chartId: string; field: string; grain: string | null; value: string; additive: boolean }): URLSearchParams {
+  const cross = readCross(params);
+  const sameSource = cross?.source === pick.chartId && cross.field === pick.field;
+  let values: string[];
+  if (pick.additive && sameSource) {
+    values = cross.values.includes(pick.value) ? cross.values.filter((v) => v !== pick.value) : [...cross.values, pick.value];
+  } else {
+    values = sameSource && cross.values.length === 1 && cross.values[0] === pick.value ? [] : [pick.value];
+  }
+  const next = new URLSearchParams(params);
+  CROSS_KEYS.forEach((k) => next.delete(k));
+  if (values.length) {
+    next.set("xf", pick.field);
+    values.forEach((v) => next.append("xv", v));
+    if (pick.grain) next.set("xg", pick.grain);
+    next.set("xc", pick.chartId);
+  }
+  return next;
+}
+
+export function withoutCross(params: URLSearchParams): URLSearchParams {
+  const next = new URLSearchParams(params);
+  CROSS_KEYS.forEach((k) => next.delete(k));
+  return next;
+}
+
+function crossValueLabel(value: string, grain: string | null): string {
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00`) : null;
+  if (!d || Number.isNaN(d.getTime())) return value;
+  if (grain === "year") return String(d.getFullYear());
+  if (grain === "quarter") return `Q${Math.floor(d.getMonth() / 3) + 1} ${d.getFullYear()}`;
+  if (grain === "month") return d.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+  if (grain === "week") return `Week of ${d.toLocaleDateString()}`;
+  return d.toLocaleDateString();
+}
+
+/** What a click in a tile selected, with a way to clear it. */
+export function CrossFilterChip({ cross, onClear }: Readonly<{ cross: CrossFilter; onClear: () => void }>) {
+  const shown = cross.values.slice(0, 3).map((v) => crossValueLabel(v, cross.grain)).join(", ");
+  const more = cross.values.length > 3 ? ` +${cross.values.length - 3}` : "";
+  return (
+    <span className="cross-chip" role="status">
+      <span className="muted">{cross.field}:</span> <strong>{shown}{more}</strong>
+      <button type="button" className="btn btn-ghost btn-icon btn-sm" onClick={onClear} aria-label={`Clear the ${cross.field} selection`} title="Clear (Esc)"><X size={13} /></button>
+    </span>
+  );
+}
 
 export function filterQuery(params: URLSearchParams): string {
   const out = new URLSearchParams();

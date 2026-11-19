@@ -17,7 +17,7 @@ from server.errors import NotFound
 from server.services import audit
 from server.services.artifacts import parse_specs
 from server.services.context import Actor
-from server.services.dashboard_filters import MAX_FILTERS, parse_selections
+from server.services.dashboard_filters import MAX_FILTERS, parse_cross_filter, parse_selections
 from server.services.queries import jsonable_rows
 
 router = APIRouter(prefix="/api/v1", tags=["charts"])
@@ -333,13 +333,19 @@ def render_dashboard_chart(
     a: Actor = Depends(actor),
     svc: Services = Depends(services),
 ) -> dict[str, Any]:
-    """One tile, narrowed by the dashboard filters in the query string (fv0=…, ff1=…, ft1=…)."""
+    """One tile, narrowed by the dashboard filters in the query string (fv0=…, ff1=…, ft1=…)
+    and by a cross-filter from a click in another tile (xf=…&xv=…[&xg=…]&xc=<clicked chart>).
+    """
     with svc.db.transaction() as s:
         d = svc.artifacts.get_dashboard(s, a, dashboard_id)
         if chart_id not in {t.get("chart_id") for t in d.layout}:
             raise NotFound("Chart is not on this dashboard")
         chart = svc.artifacts.get_chart(s, a, chart_id)
-        selections = parse_selections(d.filters or [], request.query_params.multi_items())
+        items = request.query_params.multi_items()
+        selections = parse_selections(d.filters or [], items)
+        cross, source = parse_cross_filter(items)
+        if cross is not None and source != chart_id:
+            selections.append(cross)
         r = svc.artifacts.render_chart(
             s, a, chart, theme=theme, width=width, height=height, selections=selections
         )
