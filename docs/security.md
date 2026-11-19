@@ -14,7 +14,7 @@
 | Share links | Random tokens stored hashed; read-only server-rendered pages with no JavaScript; expiry, revocation, view counting; embedding opt-in |
 | Queries | No raw SQL surface. Specs are validated against the column contract and compiled to parameterised SQL with quoted identifiers; DuckDB runs per query with external file/network access disabled and configuration locked; hard timeout |
 | File parsing | Size limits, zip-bomb checks (uncompressed size and ratio), `defusedxml` for XLSX, values-only reads (formulas are never evaluated, macros ignored), row/column/cell caps. SQLite uploads are opened in memory only, read-only (`query_only`, `trusted_schema` off), behind an authorizer that allows reads of ordinary tables and nothing reached through a view or trigger, with a time limit per read; Parquet is read by pyarrow in batches |
-| Links | Server-side downloads for link imports are https-only and checked against server-side request forgery on every hop (see [Links](#links)) |
+| Links and databases | Server-side downloads for link imports are https-only and checked against server-side request forgery on every hop; database sources use the same address rules, read-only sessions and encrypted passwords (see [Links](#links)) |
 | Exports | Formula-injection neutralisation in CSV and XLSX |
 | Browser | Strict Content-Security-Policy (no inline scripts), `X-Frame-Options: DENY` except embeds, `nosniff`, restrictive Permissions-Policy |
 | Container | Non-root user, read-only root filesystem, all capabilities dropped, `no-new-privileges` |
@@ -33,6 +33,17 @@ Importing or refreshing a dataset from a link makes the Prism server download th
 - The file type is decided from the content, never from the server's headers, and the file then goes through the same hardened parsers as an upload.
 
 Downloads made by refreshes are not kept on disk (the version records the file's SHA-256). Links are visible only to authors and above. Turn the feature off entirely with `PRISM_LINK_IMPORTS=false`.
+
+### Database sources
+
+Connections to PostgreSQL follow the same address rules: every address of the host must be public (or private, when `PRISM_LINK_ALLOW_PRIVATE=true`), loopback and metadata addresses are always refused, and libpq connects to the checked address (`hostaddr`) with the host name used only for TLS. Then:
+
+- every session is a read-only transaction with a statement timeout and a lock timeout; Prism reads one table or view the account can see, named with quoted identifiers, and never runs SQL from users;
+- reads stop at one million rows and the upload size limit;
+- the password is encrypted at rest (Fernet, with a key derived from the instance secret key by HKDF), held only on the dataset's source, never returned by the API or written to the audit log, and deleted with the source; if the secret key changes, refreshes ask for the password again;
+- libpq is told not to read a password file from the Prism server.
+
+Give Prism an account that can only `SELECT` what it should report on.
 
 ## Data handling
 

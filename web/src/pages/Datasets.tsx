@@ -4,6 +4,7 @@ import { Database, Search, Sparkles } from "lucide-react";
 import { can, post, type Dataset, type ImportRec } from "../api";
 import { useApp, useLoad } from "../app-state";
 import Dropzone from "../components/Dropzone";
+import { DatabaseImport } from "../components/DatabaseImport";
 import { LinkForm } from "../components/SourceLink";
 import { Empty, ErrorBox, PageLoading, StatusBadge, fmtNum, timeAgo } from "../components/ui";
 
@@ -19,6 +20,7 @@ export default function Datasets() {
   const [q, setQ] = useState("");
   const { data, error, loading, reload } = useLoad<Dataset[]>(`/api/v1/datasets?q=${encodeURIComponent(q)}`, [q]);
   const [busy, setBusy] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const author = can.author(me?.role);
 
   const onFile = async (f: File) => {
@@ -80,6 +82,10 @@ export default function Datasets() {
           <p className="muted small" style={{ margin: "6px 0 0 24px" }}>
             Prism downloads the file and can refresh the dataset from the same link later. For a Google Sheet, use File → Share → Publish to web → CSV.
           </p>
+          <div className="row" style={{ marginTop: 10 }}>
+            <button type="button" className="btn" onClick={() => setConnecting(true)}><Database size={16} /> Connect a PostgreSQL database</button>
+          </div>
+          {connecting && <DatabaseImport onClose={() => setConnecting(false)} />}
         </div>
       )}
 

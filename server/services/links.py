@@ -22,6 +22,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
+from urllib.parse import urlsplit
 
 from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
@@ -29,6 +30,7 @@ from sqlalchemy.orm import Session
 from core.clock import utcnow
 from core.errors import DriftDetected, PrismError
 from data.connectors.link import Fetched, LinkPolicy, check_url
+from data.connectors.postgres import PgSource, from_url, is_database_url
 from server.db.models import (
     Dataset,
     DatasetLink,
@@ -73,7 +75,7 @@ class Outcome:
 
 def require_enabled(svc: Any) -> None:
     if not svc.settings.link_imports:
-        raise Forbidden("Importing from links is turned off on this Prism instance")
+        raise Forbidden("Importing from links and databases is turned off on this Prism instance")
 
 
 def link_policy(svc: Any, s: Session) -> LinkPolicy:
@@ -89,9 +91,36 @@ def link_policy(svc: Any, s: Session) -> LinkPolicy:
 
 def _host(url: str) -> str:
     try:
-        return check_url(url).host
-    except PrismError:
+        return urlsplit(url).hostname or "the link"
+    except ValueError:
         return "the link"
+
+
+def database_row_limit(svc: Any) -> int:
+    # Rows are held in memory while they are read, so a database source is capped lower than
+    # a file: a million rows comfortably fits a small server.
+    return int(min(svc.imports.limits.max_rows, 1_000_000))
+
+
+def _download(
+    svc: Any,
+    url: str,
+    secret: str | None,
+    policy: LinkPolicy,
+    etag: str | None,
+    last_modified: str | None,
+) -> Fetched:
+    """Fetch a source: an https link, or a table in a database (``postgresql://``)."""
+    if is_database_url(url):
+        from server.services.secrets import unseal
+
+        password = unseal(secret, svc.secret_key)
+        rows: Fetched = svc.db_read(
+            from_url(url), password, policy, max_rows=database_row_limit(svc), known=etag
+        )
+        return rows
+    downloaded: Fetched = svc.link_fetch(url, policy, etag=etag, last_modified=last_modified)
+    return downloaded
 
 
 # ----------------------------------------------------------------------
@@ -109,22 +138,68 @@ def download_for_import(svc: Any, actor: Actor, url: str) -> tuple[str, Fetched]
     return target.url, svc.link_fetch(target.url, policy)
 
 
-def create_import(svc: Any, s: Session, actor: Actor, url: str, fetched: Fetched) -> Import:
+def create_import(
+    svc: Any,
+    s: Session,
+    actor: Actor,
+    url: str,
+    fetched: Fetched,
+    secret: str | None = None,
+) -> Import:
     imp: Import = svc.imports.create(s, actor, fetched.filename, fetched.data)
     imp.source_url = url
-    audit.record(
-        s,
-        actor,
-        "import.link",
-        target_type="import",
-        target_id=imp.id,
-        description=f"Downloaded {imp.filename} from {_host(url)}",
-        details={"host": _host(url), "kind": fetched.kind},
-    )
+    imp.source_secret = secret
+    if is_database_url(url):
+        src = from_url(url)
+        audit.record(
+            s,
+            actor,
+            "import.database",
+            target_type="import",
+            target_id=imp.id,
+            description=f"Read {src.table} from {src.host}/{src.database}",
+            details={"host": src.host, "database": src.database, "table": src.table},
+        )
+    else:
+        audit.record(
+            s,
+            actor,
+            "import.link",
+            target_type="import",
+            target_id=imp.id,
+            description=f"Downloaded {imp.filename} from {_host(url)}",
+            details={"host": _host(url), "kind": fetched.kind},
+        )
     return imp
 
 
-def attach(s: Session, actor: Actor, dataset: Dataset, url: str) -> DatasetLink:
+# ----------------------------------------------------------------------
+# Import from a database
+# ----------------------------------------------------------------------
+
+
+def database_tables(svc: Any, actor: Actor, src: PgSource, password: str) -> list[Any]:
+    """The tables and views the given account can read (connects outside any transaction)."""
+    actor.require("author")
+    require_enabled(svc)
+    with svc.db.transaction() as s:
+        policy = link_policy(svc, s)
+    tables: list[Any] = svc.db_tables(src, password, policy)
+    return tables
+
+
+def read_for_import(svc: Any, actor: Actor, src: PgSource, password: str) -> Fetched:
+    actor.require("author")
+    require_enabled(svc)
+    with svc.db.transaction() as s:
+        policy = link_policy(svc, s)
+    fetched: Fetched = svc.db_read(src, password, policy, max_rows=database_row_limit(svc))
+    return fetched
+
+
+def attach(
+    s: Session, actor: Actor, dataset: Dataset, url: str, secret: str | None = None
+) -> DatasetLink:
     """Remember the link a dataset was imported from (manual refresh until a schedule is set)."""
     link = s.scalars(select(DatasetLink).where(DatasetLink.dataset_id == dataset.id)).first()
     if link is None:
@@ -142,6 +217,7 @@ def attach(s: Session, actor: Actor, dataset: Dataset, url: str) -> DatasetLink:
         link.url = url
     else:
         link.etag = link.last_modified = None  # this version came from the import's download
+    link.secret = secret
     s.flush()
     return link
 
@@ -165,20 +241,30 @@ def set_link(
     require_enabled(svc)
     if schedule not in SCHEDULES:
         raise BadRequest(f"Choose a schedule: {', '.join(SCHEDULES)}")
-    target = check_url(url)
+    link = s.scalars(select(DatasetLink).where(DatasetLink.dataset_id == dataset.id)).first()
+    if is_database_url(url):
+        # A database source is set up by importing from it; here only its schedule changes.
+        if link is None or link.url != url:
+            raise BadRequest(
+                "Connect a database by importing from it (Datasets → Connect a database)"
+            )
+        host = from_url(url).host
+    else:
+        host = check_url(url).host
+        url = check_url(url).url
     if schedule != RefreshSchedule.MANUAL.value:
         require_feature(svc, s, "scheduled_refresh")
-    link = s.scalars(select(DatasetLink).where(DatasetLink.dataset_id == dataset.id)).first()
     created = link is None
     if link is None:
         link = DatasetLink(
-            dataset_id=dataset.id, workspace_id=dataset.workspace_id, url=target.url, failures=0
+            dataset_id=dataset.id, workspace_id=dataset.workspace_id, url=url, failures=0
         )
         s.add(link)
-    url_changed = link.url != target.url
+    url_changed = link.url != url
     if url_changed:
         _reset(link)
-        link.url = target.url
+        link.url = url
+        link.secret = None  # a link has no password; a database source left with its old URL
     if created or url_changed or link.schedule != schedule:
         link.next_run_at = _next_run(schedule, utcnow())
         link.failures = 0
@@ -191,8 +277,8 @@ def set_link(
         "dataset.link",
         target_type="dataset",
         target_id=dataset.id,
-        description=f"{dataset.name} refreshes from {target.host} ({schedule})",
-        details={"host": target.host, "schedule": schedule},
+        description=f"{dataset.name} refreshes from {host} ({schedule})",
+        details={"host": host, "schedule": schedule},
     )
     return link
 
@@ -265,14 +351,15 @@ def refresh(svc: Any, actor: Actor, dataset_id: str, *, lease: str | None = None
         link = s.scalars(select(DatasetLink).where(DatasetLink.dataset_id == ds.id)).first()
         if link is None:
             raise NotFound("This dataset has no link to refresh from")
-        run = _Run(link.url, lease)
-        etag, last_modified = link.etag, link.last_modified
+        url = link.url
+        run = _Run(url, lease)
+        etag, last_modified, secret = link.etag, link.last_modified, link.secret
         current = s.get(DatasetVersion, ds.current_version_id) if ds.current_version_id else None
         current_sha = current.source_sha256 if current else None
         policy = link_policy(svc, s)
 
     try:
-        fetched = svc.link_fetch(run.url, policy, etag=etag, last_modified=last_modified)
+        fetched = _download(svc, url, secret, policy, etag, last_modified)
     except PrismError as exc:
         return _record(svc, actor, dataset_id, Outcome("failed", str(exc)), run)
 

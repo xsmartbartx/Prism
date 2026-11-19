@@ -208,8 +208,10 @@ class Import(Base):
     proposal: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     dataset_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    # Set when the file was downloaded from a link rather than uploaded.
+    # Set when the file was downloaded from a link (or read from a database) rather than uploaded.
     source_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    # A database source's password, encrypted (server.services.secrets); kept until publish.
+    source_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = _ts()
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
 
@@ -269,6 +271,8 @@ class DatasetLink(Base):
     failures: Mapped[int] = mapped_column(Integer, default=0)
     etag: Mapped[str | None] = mapped_column(String(500), nullable=True)
     last_modified: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # For a database source (url ``postgresql://…``): its password, encrypted.
+    secret: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = _ts()
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
 

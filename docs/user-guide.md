@@ -31,6 +31,16 @@ The link must lead straight to the file, and anyone with the link must be able t
 
 If the link returns a web page (usually a sign-in page) Prism says so instead of importing it. For security, links to private network addresses are refused unless your administrator has allowed them (see [Security](security.md#links)).
 
+### Import from a PostgreSQL database
+
+On **Datasets**, click **Connect a PostgreSQL database**, enter the server's host, port, database, user and password, and click **Show tables**. Prism lists the tables and views that account can read; pick one and click **Import table** to open the usual **Review import**. The dataset remembers the database, so it can be refreshed from it later, by hand or on a schedule (see *Refresh from a link or database* below).
+
+- Use an account that can only read the data you want to report on. Prism reads in a read-only session in any case, never runs SQL you type, and reads one whole table or view at a time: for a subset or a join, ask your database administrator for a view.
+- **Connection**: *Encrypted (require)* encrypts the connection; *verify-full* also checks the server's certificate against public authorities (managed databases such as Neon or Supabase); *Not encrypted* is for databases on your own private network.
+- The password is stored encrypted on the Prism server and used only to refresh. Removing the dataset's source, or the dataset, deletes it.
+- Up to one million rows per table. Binary columns are skipped, and JSON values are imported as text.
+- Databases on private network addresses (an office server, say) are only reachable if your administrator has allowed private networks (see [Security](security.md#links)).
+
 ### Quarantine
 
 Rows that don't match the column contract are not loaded and not "fixed". They appear on the dataset's **Quarantine** tab with the source row number and the reason. If more rows fail than the tolerance allows, the import stops with an explanation — a mostly broken file never becomes a mostly empty dataset.
@@ -43,14 +53,14 @@ Open the dataset → **Load new file**. The file is checked against the dataset'
 - A missing column stops the load (**drift**) — fix the file or create a new dataset.
 - Every successful load becomes a new **version**; charts always show the latest version and record which version produced their numbers.
 
-### Refresh from a link
+### Refresh from a link or database
 
-A dataset imported from a link shows a **Source link** panel on its **Overview**. To give an existing dataset a link, open **Load new file** and paste it under **Or load it from a link**.
+A dataset imported from a link shows a **Source link** panel on its **Overview** (a **Source database** panel for a database table; everything below applies to both). To give an existing dataset a link, open **Load new file** and paste it under **Or load it from a link**.
 
-- **Refresh now** downloads the link. If the file has not changed since the last version (the server says so, or the bytes are identical), nothing is loaded and the panel says **No changes**. A changed file is checked like any other refresh and becomes a new version.
+- **Refresh now** downloads the link or reads the table again. If nothing has changed since the last version (the server says so, the bytes are identical, or the table holds the same rows in any order), nothing is loaded and the panel says **No changes**. A changed file is checked like any other refresh and becomes a new version.
 - **Refresh** chooses a schedule: only when you click, every hour, every day or every week (scheduled refresh needs the Pro or Business plan). Scheduled refreshes run with the access of the person who chose the schedule; if they leave the workspace or are no longer an author, the schedule pauses until another author sets it again.
 - If a refresh fails — the link is down, or the file's columns changed (drift) — the panel shows why, and the current version stays as it was. After five failures in a row a schedule pauses itself, so a broken link does not fail forever unnoticed.
-- **Change** points the dataset at another link; the bin icon removes the link (the dataset and its versions stay).
+- **Change** points the dataset at another link; the bin icon removes the link or database (the dataset and its versions stay). To read another table, import it as a new dataset.
 
 Only authors, stewards and admins see a dataset's link, because a link can contain an access token.
 

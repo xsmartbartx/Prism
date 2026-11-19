@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- PostgreSQL sources: **Datasets → Connect a PostgreSQL database** lists the tables and views an account can read and imports one through the usual review. The dataset can then be refreshed from the database by hand or on a schedule, like a link: unchanged rows (in any order) make no new version, and changes go through the contract and drift checks. Connections follow the link address rules (no internal, loopback or metadata addresses; private networks only when allowed), run in read-only sessions with timeouts, read whole tables only (no user SQL, up to one million rows), and keep the password encrypted on the dataset's source. Adds migration `0004`.
+
 - Image builds compile the web UI once, on the build machine's own platform, instead of once per target platform under emulation. Release builds are faster and no longer hang in the arm64 `npm ci` step; the release job also fails after 30 minutes instead of waiting for GitHub's 6-hour limit.
 
 ## 1.4.0 — 2026-11-19

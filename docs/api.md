@@ -63,6 +63,22 @@ curl -X PUT -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" 
 curl -X POST -H "Authorization: Bearer $KEY" "$PRISM/api/v1/datasets/$DATASET_ID/link/refresh"
 ```
 
+## Import from a PostgreSQL database
+
+```bash
+# Tables and views the account can read
+curl -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+     -d '{"host": "db.example.com", "port": 5432, "database": "shop", "user": "reader", "password": "…", "sslmode": "require"}' \
+     $PRISM/api/v1/imports/database/tables
+
+# Read one into an import (then review and commit it); "sslmode": require | verify-full | disable
+curl -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+     -d '{"host": "db.example.com", "database": "shop", "user": "reader", "password": "…", "table": "sales.orders"}' \
+     $PRISM/api/v1/imports/database
+```
+
+The committed dataset's link (`GET …/link`) has `kind: "database"` and a password-free `url`; `PUT …/link` with that same `url` changes only its schedule. Refreshes use the same `…/link/refresh` endpoint.
+
 `POST …/link/refresh` always answers 200 with `outcome.status`: `loaded` (a new version, with `version`, `rows`, `quarantined`), `unchanged`, `drift` or `failed` (with `error`). `GET …/link` returns `{link, can_schedule}` and `DELETE …/link` stops following the link. Scheduling needs the Pro or Business plan (402 otherwise).
 
 ## Query

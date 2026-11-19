@@ -111,7 +111,7 @@ export default function ImportReview() {
       <div className="page-head">
         <div className="grow">
           <h1 className="row"><FileSpreadsheet size={20} /> Review import</h1>
-          <p>{imp.filename} · {fmtBytes(imp.size_bytes)} · {imp.source_host ? `downloaded from ${imp.source_host}` : "uploaded"} {timeAgo(imp.created_at)} · ~{fmtNum(p.row_estimate)} data rows{p.sample_truncated ? " (sampled)" : ""}</p>
+          <p>{imp.filename} · {fmtBytes(imp.size_bytes)} · {imp.source_kind === "database" ? `read from ${imp.source_host}` : imp.source_host ? `downloaded from ${imp.source_host}` : "uploaded"} {timeAgo(imp.created_at)} · ~{fmtNum(p.row_estimate)} data rows{p.sample_truncated ? " (sampled)" : ""}</p>
         </div>
         <div className="row">
           <button className="btn" onClick={() => nav("/datasets")}>Cancel</button>

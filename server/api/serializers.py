@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 from urllib.parse import urlsplit
 
+from core.errors import PrismError
 from server.db.models import (
     ApiKey,
     AuditEvent,
@@ -53,6 +55,7 @@ def import_out(i: Import) -> dict[str, Any]:
         "error": i.error,
         "dataset_id": i.dataset_id,
         "source_host": _host(i.source_url),
+        "source_kind": _kind(i.source_url),
         "created_at": i.created_at,
     }
 
@@ -66,9 +69,24 @@ def _host(url: str | None) -> str | None:
         return None
 
 
+def _kind(url: str | None) -> str | None:
+    if not url:
+        return None
+    return "database" if url.startswith("postgresql://") else "link"
+
+
 def link_out(link: DatasetLink) -> dict[str, Any]:
+    from data.connectors.postgres import from_url
+
+    kind = _kind(link.url)
+    label = link.url
+    if kind == "database":
+        with contextlib.suppress(PrismError, ValueError):  # an unreadable URL shows as is
+            label = from_url(link.url).label
     return {
         "url": link.url,
+        "kind": kind,
+        "label": label,
         "host": _host(link.url),
         "schedule": link.schedule,
         "next_run_at": link.next_run_at,

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Link2, RefreshCw, Trash2 } from "lucide-react";
+import { Database, Link2, RefreshCw, Trash2 } from "lucide-react";
 import { del, post, put, type DatasetLink, type LinkRefresh, type RefreshSchedule } from "../api";
 import { useApp } from "../app-state";
 import { Confirm, fmtDate, timeAgo } from "./ui";
@@ -64,14 +64,18 @@ export function SourceLinkCard({ datasetId, link, canSchedule, onChange }: Reado
   return (
     <div className="card">
       <div className="card-head">
-        <h2 className="row" style={{ gap: 8 }}><Link2 size={16} /> Source link</h2>
+        <h2 className="row" style={{ gap: 8 }}>{link.kind === "database" ? <><Database size={16} /> Source database</> : <><Link2 size={16} /> Source link</>}</h2>
         <div className="row">
           <button type="button" className="btn btn-sm" onClick={refreshNow} disabled={busy}><RefreshCw size={14} /> {busy ? "Refreshing…" : "Refresh now"}</button>
           <button type="button" className="btn btn-sm btn-ghost" onClick={() => setConfirmRemove(true)} aria-label="Remove link" title="Stop refreshing from this link"><Trash2 size={14} /></button>
         </div>
       </div>
       <div className="card-pad stack" style={{ gap: 12 }}>
-        {editing ? (
+        {link.kind === "database" ? (
+          <div className="row" style={{ flexWrap: "nowrap" }}>
+            <span className="mono small truncate grow" title={link.url}>PostgreSQL · {link.label}</span>
+          </div>
+        ) : editing ? (
           <form className="row" onSubmit={(e: FormEvent) => { e.preventDefault(); void save({ url }); }}>
             <input className="input grow mono" type="url" value={url} onChange={(e) => setUrl(e.target.value)} aria-label="Link" required />
             <button type="submit" className="btn btn-primary btn-sm" disabled={busy || !url.trim()}>Save</button>
@@ -104,7 +108,9 @@ export function SourceLinkCard({ datasetId, link, canSchedule, onChange }: Reado
       {confirmRemove && (
         <Confirm
           title="Remove the link?"
-          message="The dataset and its versions stay. It just stops refreshing from this link; you can still load new files by hand."
+          message={link.kind === "database"
+            ? "The dataset and its versions stay. It stops refreshing from the database, and the stored password is deleted."
+            : "The dataset and its versions stay. It just stops refreshing from this link; you can still load new files by hand."}
           confirmLabel="Remove link"
           onClose={() => setConfirmRemove(false)}
           onConfirm={async () => {
