@@ -40,7 +40,7 @@ from server.services.dashboard_filters import (
     field_key,
     resolve_column,
 )
-from server.services.queries import QueryOutcome, QueryService, version_types
+from server.services.queries import QueryOutcome, QueryService, dataset_types
 
 MAX_DASHBOARD_TILES = 48
 
@@ -325,7 +325,7 @@ class ArtifactService:
         applied: list[str] = []
         skipped: list[str] = []
         if selections:
-            types = version_types(self.queries.current_version(s, ds))
+            types = dataset_types(ds, self.queries.current_version(s, ds))
             q, applied, skipped = apply_selections(q, types, selections)
         overrides: dict[str, Any] = {}
         if theme in ("light", "dark"):
@@ -465,7 +465,7 @@ class ArtifactService:
             version = s.get(DatasetVersion, ds.current_version_id) if ds else None
             if ds is None or version is None or version.dataset_id != ds.id:
                 continue
-            out.append(TileSource(chart=chart, dataset=ds, column_types=version_types(version)))
+            out.append(TileSource(chart=chart, dataset=ds, column_types=dataset_types(ds, version)))
         return out
 
     def filter_fields(

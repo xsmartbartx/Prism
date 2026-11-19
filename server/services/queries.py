@@ -16,6 +16,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from data.query import QueryCompiler, QuerySpec, ResultSet
+from data.query.calc import Calculation, build
 from data.query.duck import DuckDBExecutor
 from server.config import Settings
 from server.db.models import Dataset, DatasetVersion
@@ -56,6 +57,18 @@ def version_types(version: DatasetVersion) -> dict[str, str]:
     return {c["name"]: c["type"] for c in version.columns}
 
 
+def dataset_calculations(dataset: Dataset, version: DatasetVersion) -> list[Calculation]:
+    """The dataset's calculated fields that still check against this version's columns."""
+    return build(list(dataset.calculations or []), version_types(version), strict=False)
+
+
+def dataset_types(dataset: Dataset, version: DatasetVersion) -> dict[str, str]:
+    """Column name → type, calculated fields included."""
+    types = version_types(version)
+    types.update({c.name: c.type for c in dataset_calculations(dataset, version)})
+    return types
+
+
 class QueryService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -80,13 +93,20 @@ class QueryService:
         *,
         version_id: str | None = None,
         max_limit: int | None = None,
+        calculations: list[Calculation] | None = None,
     ) -> QueryOutcome:
+        """Run ``spec``; ``calculations`` replaces the dataset's own fields (formula previews)."""
         if actor is not None:
             actor.require("read")
         version = self.current_version(s, dataset, version_id)
-        types = version_types(version)
+        calcs = (
+            calculations if calculations is not None else dataset_calculations(dataset, version)
+        )
+        types = version_types(version) | {c.name: c.type for c in calcs}
         compiler = QueryCompiler(
-            column_types=types, max_limit=max_limit or self.settings.query_row_limit
+            column_types=types,
+            max_limit=max_limit or self.settings.query_row_limit,
+            calculations=calcs,
         )
         compiled = compiler.compile(spec)
         if not compiled.success or compiled.plan is None:

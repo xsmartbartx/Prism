@@ -122,6 +122,7 @@ def dataset_out(d: Dataset, version: DatasetVersion | None = None) -> dict[str, 
         "status": d.status,
         "owner_id": d.owner_id,
         "current_version_id": d.current_version_id,
+        "calculations": list(d.calculations or []),
         "created_at": d.created_at,
         "updated_at": d.updated_at,
     }

@@ -6,6 +6,7 @@ import { useApp, useLoad } from "../app-state";
 import { Confirm, DataTable, ErrorBox, Modal, PageLoading, StatusBadge, TypeDot, fmtDate, fmtNum, timeAgo } from "../components/ui";
 import Dropzone from "../components/Dropzone";
 import { LinkForm, SourceLinkCard, refreshMessage } from "../components/SourceLink";
+import { CalculationsCard } from "../components/Calculations";
 
 type Tab = "overview" | "data" | "quarantine" | "versions" | "settings";
 
@@ -133,6 +134,7 @@ export default function DatasetDetail() {
               </tbody>
             </table>
           </div>
+          <CalculationsCard datasetId={id} calculations={ds.calculations ?? []} columns={v.columns} editable={author} onChange={() => void reload()} />
           <div className="card">
             <div className="card-head"><h2>Charts on this dataset</h2></div>
             <div className="card-pad">

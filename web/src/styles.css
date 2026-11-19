@@ -277,6 +277,11 @@ table.table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .mark-btn:hover { border-color: var(--border-strong); color: var(--text); }
 .mark-btn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid var(--border); font-size: 12.5px; }
+button.chip { cursor: pointer; color: inherit; font: inherit; font-size: 12.5px; }
+button.chip:hover { border-color: var(--accent); }
+.calc-fields { display: flex; flex-wrap: wrap; gap: 6px; max-height: 96px; overflow: auto; }
+.calc-preview { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; overflow-x: auto; }
+.table-compact th, .table-compact td { padding: 4px 8px; font-size: 12.5px; }
 .field-list { display: flex; flex-direction: column; gap: 2px; max-height: 220px; overflow: auto; }
 .field-item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: var(--radius-sm); font-size: 13px; }
 .field-item:hover { background: var(--surface-2); }

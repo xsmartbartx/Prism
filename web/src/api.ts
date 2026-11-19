@@ -120,6 +120,19 @@ export interface Dataset {
   current_version_id: string | null; created_at: string; updated_at: string;
   row_count?: number; column_count?: number; quarantine_count?: number; version?: number;
   current_version?: Version; versions?: Omit<Version, "profile" | "columns">[];
+  calculations?: Calculation[];
+}
+
+/** A calculated field: a formula over the dataset's columns (and earlier fields). */
+export interface Calculation { name: string; expression: string; type: PrismType }
+
+/** Every field a chart can use: the dataset's columns, then its calculated fields. */
+export function datasetFields(d: Dataset): ColumnContract[] {
+  const calcs = (d.calculations ?? []).map((c): ColumnContract => ({
+    name: c.name, type: c.type, locale: "", nullable: true, description: `= ${c.expression}`,
+    role: c.type === "integer" || c.type === "float" ? "measure" : c.type === "date" ? "time" : "dimension",
+  }));
+  return [...(d.current_version?.columns ?? []), ...calcs];
 }
 
 export interface Candidate { type: PrismType; confidence: number; samples: string[]; failures: string[] }

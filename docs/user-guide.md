@@ -64,6 +64,25 @@ A dataset imported from a link shows a **Source link** panel on its **Overview**
 
 Only authors, stewards and admins see a dataset's link, because a link can contain an access token.
 
+## Calculated fields
+
+On a dataset's **Overview**, **Calculated fields → Add field** creates a column computed from the others, for example a profit, a margin, a size band or the order year. Give it a name and a formula; Prism checks the formula as you type and shows the result for the first rows. Charts, dashboard filters and click-to-filter then use it like any column, and every new version of the dataset recalculates it.
+
+Write column names in brackets and text in single quotes:
+
+| Formula | Gives |
+|---|---|
+| `[Revenue] - [Cost]` | a number |
+| `ROUND(([Revenue] - [Cost]) / [Revenue] * 100, 1)` | a percentage with one decimal |
+| `IF([Units] >= 10, 'Bulk', 'Single')` | text |
+| `YEAR([Order Date])`, `[Order Date] + 30`, `DAYS_BETWEEN([Ordered], [Shipped])` | a year, a date, a number of days |
+| `[Order Date] >= '2026-01-01' AND [Region] <> 'EU'` | true/false |
+| `UPPER([Region]) & ' – ' & [Channel]` | text joined together |
+
+Functions: `ROUND`, `ABS`, `FLOOR`, `CEIL`, `IF`, `COALESCE`, `ISEMPTY`, `YEAR`, `QUARTER`, `MONTH`, `DAY`, `WEEKDAY`, `DAYS_BETWEEN`, `UPPER`, `LOWER`, `TRIM`, `LEN`, `LEFT`, `RIGHT`, `CONTAINS`, `CONCAT`; operators `+ - * / %`, `&` (join text), `= <> < <= > >=`, `AND`, `OR`, `NOT`. Dividing by zero gives an empty value rather than an error. A field may use the fields listed above it.
+
+A field that a chart uses cannot be removed or renamed until the chart stops using it. Only authors and above can add or change fields.
+
 ## Build a chart
 
 From a dataset click **New chart** (or **Charts → New chart**).

@@ -229,6 +229,8 @@ class Dataset(Base):
     owner_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default=DatasetStatus.DRAFT.value)
     current_version_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Calculated fields: [{"name", "expression", "type"}], in order (data.query.calc).
+    calculations: Mapped[list[Any]] = mapped_column(JSON, default=list, server_default="[]")
     created_at: Mapped[datetime] = _ts()
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utcnow, onupdate=utcnow)
 

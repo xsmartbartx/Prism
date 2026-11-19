@@ -12,6 +12,7 @@
 | Authorization | Role checks in the service layer for every operation; workspaces isolate all artifacts |
 | API keys | Shown once, stored hashed, revocable, scoped to one workspace |
 | Share links | Random tokens stored hashed; read-only server-rendered pages with no JavaScript; expiry, revocation, view counting; embedding opt-in |
+| Calculated fields | Formulas are parsed and type-checked by Prism's own grammar: only bracketed column names that exist, a fixed list of functions and operators, and literal values that are bound as parameters. Nothing the user types is ever placed in SQL text |
 | Queries | No raw SQL surface. Specs are validated against the column contract and compiled to parameterised SQL with quoted identifiers; DuckDB runs per query with external file/network access disabled and configuration locked; hard timeout |
 | File parsing | Size limits, zip-bomb checks (uncompressed size and ratio), `defusedxml` for XLSX, values-only reads (formulas are never evaluated, macros ignored), row/column/cell caps. SQLite uploads are opened in memory only, read-only (`query_only`, `trusted_schema` off), behind an authorizer that allows reads of ordinary tables and nothing reached through a view or trigger, with a time limit per read; Parquet is read by pyarrow in batches |
 | Links and databases | Server-side downloads for link imports are https-only and checked against server-side request forgery on every hop; database sources use the same address rules, read-only sessions and encrypted passwords (see [Links](#links)) |
