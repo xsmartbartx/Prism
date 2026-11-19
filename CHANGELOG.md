@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5.0 — 2026-11-19
 
 - PostgreSQL sources: **Datasets → Connect a PostgreSQL database** lists the tables and views an account can read and imports one through the usual review. The dataset can then be refreshed from the database by hand or on a schedule, like a link: unchanged rows (in any order) make no new version, and changes go through the contract and drift checks. Connections follow the link address rules (no internal, loopback or metadata addresses; private networks only when allowed), run in read-only sessions with timeouts, read whole tables only (no user SQL, up to one million rows), and keep the password encrypted on the dataset's source. Adds migration `0004`.
 
