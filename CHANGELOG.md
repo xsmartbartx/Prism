@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.6.0 — 2026-11-19
 
 - Calculated fields: on a dataset's Overview, add columns computed from the others with spreadsheet-like formulas (`[Revenue] - [Cost]`, `IF([Units] >= 10, 'Bulk', 'Single')`, `YEAR([Order Date])`), checked as you type with a preview of the first rows. Charts, dashboard filters and click-to-filter use them like any column. Formulas are parsed and type-checked by Prism's own grammar (bracketed columns, a fixed function list, bound literal values) and never reach SQL as text; division by zero gives an empty value. A field a chart uses cannot be removed. Adds migration `0005`.
 
