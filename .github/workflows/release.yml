@@ -12,6 +12,8 @@ permissions:
 jobs:
   image:
     runs-on: ubuntu-latest
+    # A healthy two-platform build takes about 4 minutes; fail a stuck one instead of waiting 6 hours.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
