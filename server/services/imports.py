@@ -336,7 +336,8 @@ class ImportService:
         from server.services.links import attach, forget_validators
 
         if imp.source_url:
-            attach(s, actor, dataset, imp.source_url)
+            attach(s, actor, dataset, imp.source_url, imp.source_secret)
+            imp.source_secret = None  # the dataset's link holds the only copy now
         else:
             forget_validators(s, dataset.id)  # an upload replaced a linked dataset's version
         return loaded

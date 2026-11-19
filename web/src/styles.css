@@ -159,6 +159,10 @@ code, .mono { font-family: var(--mono); font-size: 12.5px; }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .grow { flex: 1; min-width: 0; }
 .link-form { margin-top: 10px; }
+.grid-db { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+@media (max-width: 640px) { .grid-db { grid-template-columns: 1fr; } }
+.db-tables { border: 1px solid var(--border); border-radius: var(--radius); padding: 6px; margin: 0; max-height: 280px; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.db-tables legend { padding: 0 6px; }
 .link-form .input { flex: 1; min-width: 0; }
 .sep { height: 1px; background: var(--border); margin: 4px 0; }
 
