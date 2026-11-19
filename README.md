@@ -8,6 +8,7 @@ Prism turns Excel, CSV, SQLite and Parquet files into typed, versioned datasets,
 - **Refreshes that fail loudly.** Load next month's file — or let Prism fetch it from a link or a PostgreSQL table every hour, day or week — and Prism checks it against the dataset's column contract. A renamed or missing column stops the load with a clear message instead of producing a wrong number.
 - **Charts as specifications.** Bar, line, area, donut, scatter, KPI and table charts render server-side to accessible SVG — the same output on screen, in exports and on share pages.
 - **Share safely.** Public links are read-only, expiring, revocable and counted; embeds are opt-in.
+- **Calculated fields without SQL.** Profit, margins, bands and date parts as spreadsheet-like formulas, checked as you type and usable in every chart and filter.
 - **Audit everything.** Every import, publish, share and export is recorded in a tamper-evident, hash-chained log.
 - **Runs anywhere.** One container, SQLite or PostgreSQL, automatic HTTPS, daily backups. No data leaves your server — license keys verify offline.
 

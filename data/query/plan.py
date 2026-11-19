@@ -67,6 +67,9 @@ class ExecutionPlan:
     raw: bool = field(default=False)
     """True for a row projection (no grouping, no aggregation)."""
 
+    calculations: tuple[tuple[str, str, tuple[Any, ...]], ...] = field(default=())
+    """(name, compiled SQL, bound values) of the calculated fields the query reads, in order."""
+
     plan_hash: str = field(init=False)
     """Stable content address for caching and audit."""
 
@@ -96,6 +99,7 @@ class ExecutionPlan:
             "time_grains": [list(t) for t in self.time_grains],
             "column_types": [list(t) for t in self.column_types],
             "raw": self.raw,
+            "calculations": [[n, s, list(p)] for n, s, p in self.calculations],
         }
         # Use object.__setattr__ because frozen=True
         object.__setattr__(self, "plan_hash", _stable_hash(plan_dict))

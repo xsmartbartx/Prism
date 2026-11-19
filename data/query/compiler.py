@@ -18,10 +18,12 @@ query text.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
+from data.query.calc import Calculation, needed
 from data.query.plan import ExecutionPlan
 from data.query.spec import (
     AggFunction,
@@ -66,8 +68,11 @@ class QueryCompiler:
         *,
         column_types: dict[str, str] | None = None,
         max_limit: int = 50_000,
+        calculations: Sequence[Calculation] = (),
     ) -> None:
-        self._column_types = dict(column_types or {})
+        self._calcs = list(calculations)
+        # Calculated fields are columns like any other to everything below.
+        self._column_types = dict(column_types or {}) | {c.name: c.type for c in self._calcs}
         self._dataset_columns = set(dataset_columns or set()) | set(self._column_types)
         self._max_limit = max_limit
 
@@ -158,6 +163,7 @@ class QueryCompiler:
             | {f.column for f in spec.filters}
             | set(outputs if raw else [])
         )
+        calcs = needed(self._calcs, referenced | {s.column for s in spec.sort})
         plan = ExecutionPlan(
             select_columns=tuple(outputs),
             group_by_columns=tuple(spec.dimensions),
@@ -169,6 +175,7 @@ class QueryCompiler:
             time_grains=tuple(sorted((d, g.value) for d, g in spec.time_grain.items())),
             column_types=tuple(sorted((c, t) for c, t in types.items() if c in referenced)),
             raw=raw,
+            calculations=tuple((c.name, c.sql, c.params) for c in calcs),
         )
         return CompilationResult(success=True, plan=plan)
 

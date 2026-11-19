@@ -105,7 +105,17 @@ def plan_to_sql(plan: ExecutionPlan, relation: str = "dataset") -> tuple[str, li
         else:
             where.append(f"{col} {_CMP_SQL[op]} {bind(f.value)}")
 
-    sql = f"SELECT {', '.join(select)}, COUNT(*) OVER () AS __prism_total FROM {relation}"
+    # Calculated fields: each wraps the relation in one more SELECT that adds its column, so a
+    # field can read the ones defined before it. Their values are bound parameters too, and
+    # sit textually before the WHERE clause, so they come first in ``params``.
+    source: str = relation
+    source_params: list[Any] = []
+    for i, (name, calc_sql, calc_params) in enumerate(plan.calculations):
+        source = f"(SELECT *, {calc_sql} AS {quote_ident(name)} FROM {source}) AS _calc{i}"
+        source_params = [*calc_params, *source_params]
+    params[:0] = source_params
+
+    sql = f"SELECT {', '.join(select)}, COUNT(*) OVER () AS __prism_total FROM {source}"
     if where:
         sql += " WHERE " + " AND ".join(where)
     if plan.group_by_columns and not plan.raw:

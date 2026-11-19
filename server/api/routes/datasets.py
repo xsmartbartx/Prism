@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from data.query import QuerySpec
 from presentation.export import to_csv, to_xlsx
@@ -28,6 +29,29 @@ class DatasetPatch(BaseModel):
     description: str | None = Field(default=None, max_length=5000)
     tags: list[str] | None = None
     status: str | None = None
+
+
+class CalcIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    expression: str = Field(min_length=1, max_length=1000)
+
+
+class CalculationsIn(BaseModel):
+    calculations: list[CalcIn] = Field(default_factory=list, max_length=25)
+
+
+class CalcPreviewIn(BaseModel):
+    expression: str = Field(min_length=1, max_length=1000)
+    # The fields defined so far (unsaved edits included), which the formula may use.
+    calculations: list[CalcIn] = Field(default_factory=list, max_length=25)
+
+
+def _chart_columns(query: dict[str, Any]) -> set[str]:
+    cols = set(query.get("dimensions") or []) | set(query.get("columns") or [])
+    cols |= {m.get("column") for m in query.get("measures") or []}
+    cols |= {f.get("column") for f in query.get("filters") or []}
+    cols |= {s.get("column") for s in query.get("sort") or []}
+    return {c for c in cols if isinstance(c, str)}
 
 
 class LinkIn(BaseModel):
@@ -163,6 +187,84 @@ async def refresh(
                 "reasons": loaded.result.reasons,
                 "drift": loaded.result.drift,
             },
+        }
+
+
+@router.put("/{dataset_id}/calculations")
+def put_calculations(
+    dataset_id: str,
+    body: CalculationsIn,
+    a: Actor = Depends(actor),
+    svc: Services = Depends(services),
+) -> dict[str, Any]:
+    """Replace the dataset's calculated fields (each may use the ones before it)."""
+    from data.query.calc import build
+    from server.db.models import Chart
+    from server.errors import Conflict
+    from server.services.queries import version_types
+
+    a.require("author")
+    with svc.db.transaction() as s:
+        ds = svc.artifacts.get_dataset(s, a, dataset_id)
+        version = svc.queries.current_version(s, ds)
+        calcs = build([c.model_dump() for c in body.calculations], version_types(version))
+        removed = {c["name"] for c in ds.calculations or []} - {c.name for c in calcs}
+        if removed:
+            charts = s.scalars(select(Chart).where(Chart.dataset_id == ds.id)).all()
+            users = sorted(c.name for c in charts if _chart_columns(c.query_spec) & removed)
+            if users:
+                names = ", ".join(f"[{n}]" for n in sorted(removed))
+                raise Conflict(
+                    f"Charts use {names}: {', '.join(users[:5])}. Change those charts first."
+                )
+        ds.calculations = [
+            {"name": c.name, "expression": c.expression, "type": c.type} for c in calcs
+        ]
+        audit.record(
+            s,
+            a,
+            "dataset.calculations",
+            target_type="dataset",
+            target_id=ds.id,
+            description=f"{ds.name} has {len(calcs)} calculated field(s)",
+            details={"fields": [{"name": c.name, "expression": c.expression} for c in calcs]},
+        )
+        return {"calculations": ds.calculations}
+
+
+@router.post("/{dataset_id}/calculations/preview")
+def preview_calculation(
+    dataset_id: str,
+    body: CalcPreviewIn,
+    a: Actor = Depends(actor),
+    svc: Services = Depends(services),
+) -> dict[str, Any]:
+    """Check a formula and show what it gives for the first rows."""
+    from data.query.calc import Calculation, build, compile_expression
+    from server.services.queries import version_types
+
+    a.require("author")
+    with svc.db.transaction() as s:
+        ds = svc.artifacts.get_dataset(s, a, dataset_id)
+        version = svc.queries.current_version(s, ds)
+        columns = version_types(version)
+        base = build([c.model_dump() for c in body.calculations], columns)
+        known = columns | {c.name: c.type for c in base}
+        sql, kind, params, used = compile_expression(body.expression, known)
+        probe = Calculation("__prism_preview", body.expression, kind, sql, tuple(params),
+                            frozenset(used))
+        shown = [c for c in known if c in used][:4]
+        outcome = svc.queries.run(
+            s, a, ds, QuerySpec(columns=[*shown, probe.name], limit=8),
+            calculations=[*base, probe],
+        )
+        rows = jsonable_rows(outcome.result.rows)
+        return {
+            "type": kind,
+            "columns": shown,
+            "rows": [
+                {"inputs": {c: r.get(c) for c in shown}, "value": r.get(probe.name)} for r in rows
+            ],
         }
 
 

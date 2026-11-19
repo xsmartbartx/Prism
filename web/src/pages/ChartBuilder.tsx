@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AreaChart, BarChart3, Download, Hash, LineChart, PieChart, Plus, Save, ScatterChart, Share2, Sparkles, Table2, Trash2, Wand2, X } from "lucide-react";
-import { can, del, download, get, post, put, type Aggregation, type Chart, type ColumnContract, type Dataset, type Filter, type QueryResult, type QuerySpec, type ViewSpec } from "../api";
+import { can, del, download, get, post, put, type Aggregation, type Chart, type ColumnContract, type Dataset, type Filter, type QueryResult, type QuerySpec, type ViewSpec, datasetFields } from "../api";
 import { effectiveTheme, useApp, useLoad } from "../app-state";
 import ShareDialog from "../components/ShareDialog";
 import { ChartSvg, Confirm, DataTable, ErrorBox, PageLoading, TypeDot } from "../components/ui";
@@ -171,7 +171,7 @@ export default function ChartBuilder() {
       .then((d) => {
         setDs(d);
         if (!id) {
-          setState(defaultState(d.current_version?.columns ?? []));
+          setState(defaultState(datasetFields(d)));
           setName((n) => n || `${d.name} chart`);
         }
       })
@@ -203,7 +203,7 @@ export default function ChartBuilder() {
     return <ErrorBox error="There are no datasets yet. Import a file first, then build charts on it." />;
   if (!state || !ds) return <PageLoading />;
 
-  const cols = ds.current_version?.columns ?? [];
+  const cols = datasetFields(ds);
   const numeric = cols.filter((c) => c.type === "integer" || c.type === "float");
   const set = (p: Partial<State>) => setState((s) => (s ? { ...s, ...p } : s));
   const xCol = cols.find((c) => c.name === state.x);

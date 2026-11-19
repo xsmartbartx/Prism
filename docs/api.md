@@ -63,6 +63,22 @@ curl -X PUT -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" 
 curl -X POST -H "Authorization: Bearer $KEY" "$PRISM/api/v1/datasets/$DATASET_ID/link/refresh"
 ```
 
+## Calculated fields
+
+```bash
+# Replace a dataset's calculated fields (each may use the ones before it)
+curl -X PUT -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+     -d '{"calculations": [{"name": "Profit", "expression": "[Revenue] - [Cost]"}]}' \
+     "$PRISM/api/v1/datasets/$DATASET_ID/calculations"
+
+# Check a formula and see its first results
+curl -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+     -d '{"expression": "ROUND([Profit] / [Revenue] * 100, 1)", "calculations": [{"name": "Profit", "expression": "[Revenue] - [Cost]"}]}' \
+     "$PRISM/api/v1/datasets/$DATASET_ID/calculations/preview"
+```
+
+`GET /api/v1/datasets/{id}` lists them under `calculations` (`name`, `expression`, `type`); queries, charts and dashboard filters refer to them by name like columns. An invalid formula answers 400 with the reason; removing a field a chart uses answers 409.
+
 ## Import from a PostgreSQL database
 
 ```bash
