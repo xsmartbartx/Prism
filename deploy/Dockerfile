@@ -2,7 +2,9 @@
 # Prism — production image: web UI + API in one non-root container.
 
 # ---------- 1. Web UI ----------
-FROM node:22-alpine AS web
+# Built once on the build machine's own platform: the output is plain JS/CSS, the same for every
+# target. Building it per target ran npm under emulation for arm64, which is slow and can hang.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS web
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --ignore-scripts --no-audit --no-fund
