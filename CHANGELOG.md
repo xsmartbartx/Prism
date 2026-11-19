@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.0 — 2026-11-19
 
 - Click to filter on dashboards: clicking a bar, line point or donut slice filters the other charts on the dashboard to that value (on any field, no filter set up needed). The clicked chart keeps its bars and highlights the choice; a chip shows the selection, and Esc, a second click or × clears it. Shift/Ctrl/⌘-click selects several values; on a time axis grouped by week, month, quarter or year a click selects the whole period. The selection is part of the page address, combines with dashboard filters, and is applied as bound parameters like any filter.
 - Charts whose query groups the category axis by time now label it by that grain even when the saved view did not say so (charts made through the API).
