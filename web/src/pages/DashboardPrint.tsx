@@ -4,7 +4,7 @@ import { Printer } from "lucide-react";
 import { get, type Dashboard, type TileRender } from "../api";
 import { useLoad } from "../app-state";
 import { FILTER_PARAM, readCross, withoutCross } from "../components/DashboardFilters";
-import { ErrorBox, PageLoading } from "../components/ui";
+import { ChartSvg, ErrorBox, PageLoading } from "../components/ui";
 
 const PAGE_WIDTH = 1000; // CSS px across the printable area; tiles are sized from it
 
@@ -42,8 +42,7 @@ function PrintTile({ dashboardId, chartId, width, query, onDone }: Readonly<{
   return (
     <>
       {tile.skipped.length > 0 && <p className="tile-note">Not filtered by {tile.skipped.join(", ")}.</p>}
-      {/* SVG from Prism's own renderer, which escapes all text. */}
-      <div className="chart-svg" dangerouslySetInnerHTML={{ __html: tile.svg }} />
+      <ChartSvg svg={tile.svg} minHeight={200} />
     </>
   );
 }
