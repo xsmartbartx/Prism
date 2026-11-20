@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.7.0 — 2026-11-20
 
 - Aggregate fields: calculated fields can use `SUM`, `AVG`, `MIN`, `MAX`, `MEDIAN`, `COUNT` and `COUNTD`, which makes them measures that charts calculate for each group, e.g. the true margin `(SUM([Revenue]) - SUM([Cost])) / SUM([Revenue])` rather than an average of per-row margins. They appear under **Aggregate fields** in the chart builder's Values (function *formula*, `"value"` in the API), can use row fields and earlier aggregate fields, and preview their value over the whole dataset. Every column must be inside an aggregate, and aggregates do not nest.
 

@@ -70,7 +70,7 @@ services:
     mem_limit: 512m
 
   app:
-    image: ghcr.io/xsmartbartx/prism:${PRISM_VERSION:-1.6.0}
+    image: ghcr.io/xsmartbartx/prism:${PRISM_VERSION:-1.7.0}
     restart: unless-stopped
     depends_on:
       init-secrets:
