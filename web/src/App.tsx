@@ -6,6 +6,7 @@ import Layout from "./components/Layout";
 import { Spinner } from "./components/ui";
 import { AcceptInvite, Login, Setup } from "./pages/Auth";
 import ChartBuilder from "./pages/ChartBuilder";
+import DashboardPrint from "./pages/DashboardPrint";
 import DashboardView from "./pages/DashboardView";
 import DatasetDetail from "./pages/DatasetDetail";
 import Datasets from "./pages/Datasets";
@@ -49,6 +50,7 @@ export default function App() {
       <Route path="/setup" element={needsSetup ? <Setup /> : <Navigate to="/" replace />} />
       <Route path="/login" element={me ? <Navigate to="/" replace /> : needsSetup ? <Navigate to="/setup" replace /> : <Login />} />
       <Route path="/invite/:token" element={<AcceptInvite />} />
+      <Route path="/dashboards/:id/print" element={<RequireAuth><DashboardPrint /></RequireAuth>} />
       <Route element={<RequireAuth><Layout /></RequireAuth>}>
         <Route index element={<Home />} />
         <Route path="/datasets" element={<Datasets />} />

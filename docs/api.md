@@ -143,6 +143,7 @@ curl -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
 | Charts | `GET/POST /api/v1/charts`, `PUT/DELETE /api/v1/charts/{id}`, `GET …/data`, `GET …/export?format=svg\|csv\|xlsx`, `POST /api/v1/charts/preview` |
 | Dashboards | `GET/POST /api/v1/dashboards`, `GET/PUT/DELETE /api/v1/dashboards/{id}` (body: `name`, `description`, `layout`, optional `filters: [{field, kind: values\|date_range, label}]`) |
 | Dashboard filters | `POST /api/v1/dashboards/filter-fields` (`{chart_ids}` → fields a filter can use), `GET /api/v1/dashboards/{id}/filters/{index}/options` (values or date span), `GET /api/v1/dashboards/{id}/charts/{chart_id}/render?fv0=EU&ff1=2026-01-01&ft1=2026-03-31` (`{svg, applied, skipped}`); a click selection adds `xf=<field>&xv=<value>…[&xg=<grain>]&xc=<clicked chart id>`, applied to every tile but the clicked one. Clickable marks carry `class="pick" data-pick="<raw value>"`, and their `<svg>` carries `data-pick-field` (and `data-pick-grain`) |
+| Dashboard export | `GET /api/v1/dashboards/{id}/export?format=xlsx` with the same filter parameters as tiles (`fv0=…`, `ff1=…`, `xf=…`): a workbook with an *About* sheet and a sheet per chart (explorers and above) |
 | Shares | `POST /api/v1/shares`, `GET /api/v1/shares?artifact_id=`, `DELETE /api/v1/shares/{id}` |
 | Audit | `GET /api/v1/audit`, `GET /api/v1/audit/verify` |
 | Health | `GET /healthz`, `GET /readyz`, `GET /api/v1/version` |
