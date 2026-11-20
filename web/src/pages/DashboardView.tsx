@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowDown, ArrowUp, Check, Pencil, Plus, Share2, Trash2, X } from "lucide-react";
-import { can, del, get, getText, put, type Chart, type Dashboard, type DashboardFilter, type Tile, type TileRender } from "../api";
+import { ArrowDown, ArrowUp, Check, FileSpreadsheet, Pencil, Plus, Printer, Share2, Trash2, X } from "lucide-react";
+import { can, del, download, get, getText, put, type Chart, type Dashboard, type DashboardFilter, type Tile, type TileRender } from "../api";
 import { effectiveTheme, useApp, useLoad } from "../app-state";
 import { CrossFilterChip, FilterBar, FilterEditor, filterQuery, pickedParams, readCross, withoutCross } from "../components/DashboardFilters";
 import ShareDialog from "../components/ShareDialog";
@@ -190,6 +190,8 @@ export default function DashboardView() {
           ) : (
             editable && (
               <>
+                <button type="button" className="btn" onClick={() => window.open(`/dashboards/${id}/print${fq ? `?${fq.slice(1)}` : ""}`, "_blank", "noopener")} title="Print, or save as PDF, with the current filters"><Printer size={16} /> Print</button>
+                <button type="button" className="btn" onClick={() => download(`/api/v1/dashboards/${id}/export?format=xlsx${fq}`).catch((e) => toast((e as Error).message, "error"))} title="Every chart's data, with the current filters, in one workbook"><FileSpreadsheet size={16} /> Excel</button>
                 <button className="btn" onClick={() => setShare(true)}><Share2 size={16} /> Share</button>
                 <button className="btn" onClick={() => setEdit(true)}><Pencil size={16} /> Edit</button>
                 <button className="btn btn-ghost btn-icon" aria-label="Delete dashboard" onClick={() => setConfirmDelete(true)}><Trash2 size={16} /></button>

@@ -65,3 +65,54 @@ def to_xlsx(columns: list[str], rows: list[dict[str, Any]], *, sheet: str = "Dat
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+_SHEET_FORBIDDEN = set("[]:*?/\\")
+
+
+def sheet_names(names: list[str]) -> list[str]:
+    """Excel-safe, unique sheet names (31 characters, no []:*?/\\, case-insensitive)."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in names:
+        base = "".join("_" if ch in _SHEET_FORBIDDEN else ch for ch in raw).strip(" '") or "Sheet"
+        name, n = base[:31], 2
+        while name.casefold() in seen:
+            suffix = f" ({n})"
+            name, n = base[: 31 - len(suffix)] + suffix, n + 1
+        seen.add(name.casefold())
+        out.append(name)
+    return out
+
+
+def to_xlsx_workbook(
+    sheets: list[tuple[str, list[str], list[dict[str, Any]]]],
+    *,
+    summary: list[tuple[str, str]] | None = None,
+) -> bytes:
+    """One workbook: an optional "About" sheet of label/value lines, then one sheet per table."""
+    from openpyxl import Workbook
+    from openpyxl.cell.cell import WriteOnlyCell
+    from openpyxl.styles import Font
+
+    wb = Workbook(write_only=True)
+    names = sheet_names(["About", *(s[0] for s in sheets)] if summary else [s[0] for s in sheets])
+    if summary:
+        ws = wb.create_sheet(title=names.pop(0))
+        for label, value in summary:
+            head = WriteOnlyCell(ws, value=neutralize(label))
+            head.font = Font(bold=True)
+            ws.append([head, neutralize(value)])
+    for name, (_, columns, rows) in zip(names, sheets, strict=True):
+        ws = wb.create_sheet(title=name)
+        header = []
+        for c in columns:
+            cell = WriteOnlyCell(ws, value=neutralize(c))
+            cell.font = Font(bold=True)
+            header.append(cell)
+        ws.append(header)
+        for r in rows:
+            ws.append([neutralize(r.get(c)) for c in columns])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

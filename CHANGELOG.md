@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Dashboard export: **Print** opens a paper-ready view of the dashboard (name, filters in words, generation time, every chart in light colours) and the browser's print dialog, for printing or saving as PDF; **Excel** downloads a workbook with a sheet per chart, filters and click selections applied, and an *About* sheet summarising the dashboard, time, exporter, filters and any chart they could not apply to. Sheet names are made Excel-safe and unique; formula injection is neutralised; exports are audited.
+
 ## 1.7.0 — 2026-11-20
 
 - Aggregate fields: calculated fields can use `SUM`, `AVG`, `MIN`, `MAX`, `MEDIAN`, `COUNT` and `COUNTD`, which makes them measures that charts calculate for each group, e.g. the true margin `(SUM([Revenue]) - SUM([Cost])) / SUM([Revenue])` rather than an average of per-row margins. They appear under **Aggregate fields** in the chart builder's Values (function *formula*, `"value"` in the API), can use row fields and earlier aggregate fields, and preview their value over the whole dataset. Every column must be inside an aggregate, and aggregates do not nest.
