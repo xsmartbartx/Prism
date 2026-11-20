@@ -112,7 +112,7 @@ export interface User { id: string; email: string; name: string; is_superadmin: 
 export interface Workspace { id: string; name: string; slug: string; role?: Role }
 export interface Me { user: User; workspace: Workspace; workspaces: Workspace[]; role: Role; via: string }
 
-export interface ColumnContract { name: string; type: PrismType; role: string; locale: string; nullable: boolean; description?: string | null; source_name?: string | null }
+export interface ColumnContract { name: string; type: PrismType; role: string; locale: string; nullable: boolean; description?: string | null; source_name?: string | null; aggregate?: boolean }
 export interface ColumnStats { type: string; nulls: number; null_ratio: number; distinct?: number; min?: number | string; max?: number | string; mean?: number; sum?: number; top?: { value: unknown; count: number }[]; true?: number }
 export interface Version { id: string; version: number; row_count: number; quarantine_count: number; content_hash: string; source_sha256?: string; created_at: string; columns: ColumnContract[]; profile: { row_count: number; columns: Record<string, ColumnStats> } }
 export interface Dataset {
@@ -124,13 +124,13 @@ export interface Dataset {
 }
 
 /** A calculated field: a formula over the dataset's columns (and earlier fields). */
-export interface Calculation { name: string; expression: string; type: PrismType }
+export interface Calculation { name: string; expression: string; type: PrismType; aggregate?: boolean }
 
 /** Every field a chart can use: the dataset's columns, then its calculated fields. */
 export function datasetFields(d: Dataset): ColumnContract[] {
   const calcs = (d.calculations ?? []).map((c): ColumnContract => ({
-    name: c.name, type: c.type, locale: "", nullable: true, description: `= ${c.expression}`,
-    role: c.type === "integer" || c.type === "float" ? "measure" : c.type === "date" ? "time" : "dimension",
+    name: c.name, type: c.type, locale: "", nullable: true, description: `= ${c.expression}`, aggregate: !!c.aggregate,
+    role: c.aggregate || c.type === "integer" || c.type === "float" ? "measure" : c.type === "date" ? "time" : "dimension",
   }));
   return [...(d.current_version?.columns ?? []), ...calcs];
 }
@@ -151,7 +151,7 @@ export interface LinkRefresh {
   link: DatasetLink | null; dataset: Dataset;
 }
 
-export interface Aggregation { column: string; function: "sum" | "avg" | "count" | "min" | "max" | "count_distinct" | "median"; alias?: string | null }
+export interface Aggregation { column: string; function: "sum" | "avg" | "count" | "min" | "max" | "count_distinct" | "median" | "value"; alias?: string | null }
 export interface Filter { column: string; operator: string; value: unknown }
 export interface QuerySpec { dimensions?: string[]; measures?: Aggregation[]; filters?: Filter[]; sort?: { column: string; direction: "asc" | "desc" }[]; limit?: number | null; columns?: string[]; time_grain?: Record<string, string> }
 export interface Encoding { channel: "x" | "y" | "color" | "size"; field: string; label?: string | null }

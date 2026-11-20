@@ -79,9 +79,22 @@ Write column names in brackets and text in single quotes:
 | `[Order Date] >= '2026-01-01' AND [Region] <> 'EU'` | true/false |
 | `UPPER([Region]) & ' – ' & [Channel]` | text joined together |
 
-Functions: `ROUND`, `ABS`, `FLOOR`, `CEIL`, `IF`, `COALESCE`, `ISEMPTY`, `YEAR`, `QUARTER`, `MONTH`, `DAY`, `WEEKDAY`, `DAYS_BETWEEN`, `UPPER`, `LOWER`, `TRIM`, `LEN`, `LEFT`, `RIGHT`, `CONTAINS`, `CONCAT`; operators `+ - * / %`, `&` (join text), `= <> < <= > >=`, `AND`, `OR`, `NOT`. Dividing by zero gives an empty value rather than an error. A field may use the fields listed above it.
+Functions: `SUM`, `AVG`, `MIN`, `MAX`, `MEDIAN`, `COUNT`, `COUNTD` (see *Aggregate fields* below), `ROUND`, `ABS`, `FLOOR`, `CEIL`, `IF`, `COALESCE`, `ISEMPTY`, `YEAR`, `QUARTER`, `MONTH`, `DAY`, `WEEKDAY`, `DAYS_BETWEEN`, `UPPER`, `LOWER`, `TRIM`, `LEN`, `LEFT`, `RIGHT`, `CONTAINS`, `CONCAT`; operators `+ - * / %`, `&` (join text), `= <> < <= > >=`, `AND`, `OR`, `NOT`. Dividing by zero gives an empty value rather than an error. A field may use the fields listed above it.
 
 A field that a chart uses cannot be removed or renamed until the chart stops using it. Only authors and above can add or change fields.
+
+### Aggregate fields (measures)
+
+A formula that uses `SUM`, `AVG`, `MIN`, `MAX`, `MEDIAN`, `COUNT` or `COUNTD` (count distinct) is an **aggregate field**: charts calculate it for each group they show, rather than row by row. This is how to get ratios right. A margin per region is `(SUM([Revenue]) - SUM([Cost])) / SUM([Revenue])`; averaging a per-row margin would weigh a 1 € order the same as a 10,000 € one.
+
+| Formula | Gives, for each group |
+|---|---|
+| `(SUM([Revenue]) - SUM([Cost])) / SUM([Revenue]) * 100` | the true margin % |
+| `SUM([Revenue]) / COUNT()` | revenue per row (order) |
+| `COUNTD([Customer])` | the number of different customers |
+| `SUM([Revenue]) / SUM([Units])` | the average price per unit |
+
+Every column in an aggregate field must be inside an aggregate, and aggregates do not go inside each other. An aggregate field can use row fields and earlier aggregate fields. The preview shows its value over the whole dataset. In the chart builder they appear under **Aggregate fields** in **Values**, with the function shown as *formula*; they cannot be axes, colours or filters.
 
 ## Build a chart
 

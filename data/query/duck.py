@@ -67,11 +67,19 @@ def plan_to_sql(plan: ExecutionPlan, relation: str = "dataset") -> tuple[str, li
         return quote_ident(col)
 
     select: list[str] = []
+    select_params: list[Any] = []
+    exprs = {name: (sql, values) for name, sql, values in plan.measure_exprs}
     if plan.raw:
         select = [quote_ident(c) for c in plan.select_columns] or ["*"]
     else:
         select += [f"{dim_expr(d)} AS {quote_ident(d)}" for d in plan.group_by_columns]
         for agg in plan.aggregations:
+            if agg.function == AggFunction.VALUE:
+                # An aggregate field: its compiled formula, values bound in SELECT-list order.
+                agg_sql, agg_values = exprs[agg.output_name]
+                select.append(f"({agg_sql}) AS {quote_ident(agg.output_name)}")
+                select_params.extend(agg_values)
+                continue
             arg = "*" if agg.column == "*" else quote_ident(agg.column)
             select.append(f"{_AGG_SQL[agg.function].format(arg)} AS {quote_ident(agg.output_name)}")
 
@@ -113,7 +121,7 @@ def plan_to_sql(plan: ExecutionPlan, relation: str = "dataset") -> tuple[str, li
     for i, (name, calc_sql, calc_params) in enumerate(plan.calculations):
         source = f"(SELECT *, {calc_sql} AS {quote_ident(name)} FROM {source}) AS _calc{i}"
         source_params = [*calc_params, *source_params]
-    params[:0] = source_params
+    params[:0] = [*select_params, *source_params]  # SELECT list, then FROM, then WHERE
 
     sql = f"SELECT {', '.join(select)}, COUNT(*) OVER () AS __prism_total FROM {source}"
     if where:

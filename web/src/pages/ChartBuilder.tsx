@@ -8,6 +8,8 @@ import { ChartSvg, Confirm, DataTable, ErrorBox, PageLoading, TypeDot } from "..
 
 type Mark = ViewSpec["mark"];
 type Fn = Aggregation["function"];
+/** A plain column keeps its function when switched to another column, unless it was "value". */
+const o_fn = (fn: Fn): Fn => (fn === "value" ? "sum" : fn);
 
 interface State {
   mark: Mark;
@@ -171,7 +173,7 @@ export default function ChartBuilder() {
       .then((d) => {
         setDs(d);
         if (!id) {
-          setState(defaultState(datasetFields(d)));
+          setState(defaultState(datasetFields(d).filter((c) => !c.aggregate)));
           setName((n) => n || `${d.name} chart`);
         }
       })
@@ -203,7 +205,11 @@ export default function ChartBuilder() {
     return <ErrorBox error="There are no datasets yet. Import a file first, then build charts on it." />;
   if (!state || !ds) return <PageLoading />;
 
-  const cols = datasetFields(ds);
+  // Row-level fields can be axes, colours, filters and table columns; aggregate fields are values only.
+  const allFields = datasetFields(ds);
+  const cols = allFields.filter((c) => !c.aggregate);
+  const aggregates = allFields.filter((c) => c.aggregate);
+  const isAggregate = (name: string) => aggregates.some((c) => c.name === name);
   const numeric = cols.filter((c) => c.type === "integer" || c.type === "float");
   const set = (p: Partial<State>) => setState((s) => (s ? { ...s, ...p } : s));
   const xCol = cols.find((c) => c.name === state.x);
@@ -302,13 +308,22 @@ export default function ChartBuilder() {
                 {state.ys.map((y, i) => (
                   <div className="row" key={i} style={{ flexWrap: "nowrap" }}>
                     {state.mark !== "scatter" && (
-                      <select className="input input-sm" style={{ width: 118 }} value={y.column === "*" ? "count" : y.fn} disabled={!editable || y.column === "*"} onChange={(e) => set({ ys: state.ys.map((o, j) => (j === i ? { ...o, fn: e.target.value as Fn } : o)) })}>
-                        {FNS.map((f) => <option key={f} value={f}>{f.replace("_", " ")}</option>)}
+                      <select className="input input-sm" style={{ width: 118 }} value={y.column === "*" ? "count" : y.fn} disabled={!editable || y.column === "*" || isAggregate(y.column)} onChange={(e) => set({ ys: state.ys.map((o, j) => (j === i ? { ...o, fn: e.target.value as Fn } : o)) })} title={isAggregate(y.column) ? "This field's formula already aggregates" : undefined}>
+                        {isAggregate(y.column) ? <option value="value">formula</option> : FNS.map((f) => <option key={f} value={f}>{f.replace("_", " ")}</option>)}
                       </select>
                     )}
-                    <select className="input input-sm" value={y.column} disabled={!editable} onChange={(e) => set({ ys: state.ys.map((o, j) => (j === i ? { column: e.target.value, fn: e.target.value === "*" ? "count" : numeric.some((c) => c.name === e.target.value) ? o.fn : "count" } : o)) })}>
+                    <select className="input input-sm" value={y.column} disabled={!editable} onChange={(e) => {
+                      const col = e.target.value;
+                      const fn: Fn = col === "*" ? "count" : isAggregate(col) ? "value" : numeric.some((c) => c.name === col) ? (o_fn(state.ys[i].fn)) : "count";
+                      set({ ys: state.ys.map((o, j) => (j === i ? { column: col, fn } : o)) });
+                    }}>
                       {state.mark !== "scatter" && <option value="*">Row count</option>}
                       {(state.mark === "scatter" ? numeric : cols).map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+                      {state.mark !== "scatter" && aggregates.length > 0 && (
+                        <optgroup label="Aggregate fields">
+                          {aggregates.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+                        </optgroup>
+                      )}
                     </select>
                     {editable && <button className="btn btn-ghost btn-icon btn-sm" aria-label="Remove value" onClick={() => set({ ys: state.ys.filter((_, j) => j !== i) })}><X size={14} /></button>}
                   </div>

@@ -4,10 +4,11 @@ import { post, put, type Calculation, type ColumnContract } from "../api";
 import { useApp } from "../app-state";
 import { Modal, TypeDot } from "./ui";
 
-interface Preview { type: string; columns: string[]; rows: { inputs: Record<string, unknown>; value: unknown }[] }
+interface Preview { type: string; aggregate?: boolean; columns: string[]; rows: { inputs: Record<string, unknown>; value: unknown }[] }
 
 const FUNCTIONS: [string, string][] = [
   ["[Revenue] - [Cost]", "arithmetic: + - * / % (division by zero gives an empty value)"],
+  ["SUM · AVG · MIN · MAX · MEDIAN · COUNT · COUNTD", "aggregates: e.g. (SUM([Revenue]) - SUM([Cost])) / SUM([Revenue]) is the true margin of each group a chart shows"],
   ["ROUND(x, 1) · ABS(x) · FLOOR(x) · CEIL(x)", "numbers"],
   ["IF(condition, then, else)", "e.g. IF([Units] >= 10, 'Bulk', 'Single')"],
   ["COALESCE(x, 0) · ISEMPTY(x)", "empty values"],
@@ -85,7 +86,13 @@ function Editor({ datasetId, existing, index, columns, onClose, onSaved }: Reado
           {fields.map((f) => <button type="button" key={f} className="chip" onClick={() => insert(`[${f.replace(/]/g, "]]")}]`)}>{f}</button>)}
         </div>
         {error && <p className="small" role="alert" style={{ color: "var(--danger)", margin: 0 }}>{error}</p>}
-        {preview && (
+        {preview?.aggregate && (
+          <div className="calc-preview">
+            <div className="small muted">Aggregate field (a measure): charts calculate it for each group. Over the whole dataset:</div>
+            <div style={{ fontSize: 20, fontWeight: 650 }}>{show(preview.rows[0]?.value)} <span className="small muted">{preview.type}</span></div>
+          </div>
+        )}
+        {preview && !preview.aggregate && (
           <div className="calc-preview">
             <div className="small muted">Result: <span className="row" style={{ display: "inline-flex", gap: 4 }}><TypeDot type={preview.type as ColumnContract["type"]} /> {preview.type}</span> · first rows</div>
             <table className="table table-compact">
@@ -138,7 +145,7 @@ export function CalculationsCard({ datasetId, calculations, columns, editable, o
               {calculations.map((c, i) => (
                 <tr key={c.name}>
                   <td><strong>{c.name}</strong></td>
-                  <td><span className="row" style={{ flexWrap: "nowrap" }}><TypeDot type={c.type} /> {c.type}</span></td>
+                  <td><span className="row" style={{ flexWrap: "nowrap" }}><TypeDot type={c.type} /> {c.type}{c.aggregate && <span className="badge" title="Aggregate field: use it as a value in charts">measure</span>}</span></td>
                   <td className="mono small truncate" style={{ maxWidth: 420 }} title={c.expression}>{c.expression}</td>
                   {editable && (
                     <td className="num" style={{ whiteSpace: "nowrap" }}>

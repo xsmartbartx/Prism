@@ -28,6 +28,7 @@ class AggFunction(str, Enum):
     MAX = "max"
     COUNT_DISTINCT = "count_distinct"
     MEDIAN = "median"
+    VALUE = "value"  # an aggregate field's own formula (it is already aggregated)
 
 
 class FilterOp(str, Enum):

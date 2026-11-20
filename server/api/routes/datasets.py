@@ -218,7 +218,8 @@ def put_calculations(
                     f"Charts use {names}: {', '.join(users[:5])}. Change those charts first."
                 )
         ds.calculations = [
-            {"name": c.name, "expression": c.expression, "type": c.type} for c in calcs
+            {"name": c.name, "expression": c.expression, "type": c.type, "aggregate": c.aggregate}
+            for c in calcs
         ]
         audit.record(
             s,
@@ -240,7 +241,8 @@ def preview_calculation(
     svc: Services = Depends(services),
 ) -> dict[str, Any]:
     """Check a formula and show what it gives for the first rows."""
-    from data.query.calc import Calculation, build, compile_expression
+    from data.query.calc import Calculation, build, compile_formula
+    from data.query.spec import AggFunction, AggregationSpec
     from server.services.queries import version_types
 
     a.require("author")
@@ -249,18 +251,42 @@ def preview_calculation(
         version = svc.queries.current_version(s, ds)
         columns = version_types(version)
         base = build([c.model_dump() for c in body.calculations], columns)
-        known = columns | {c.name: c.type for c in base}
-        sql, kind, params, used = compile_expression(body.expression, known)
-        probe = Calculation("__prism_preview", body.expression, kind, sql, tuple(params),
-                            frozenset(used))
-        shown = [c for c in known if c in used][:4]
+        known = columns | {c.name: c.type for c in base if not c.aggregate}
+        f = compile_formula(body.expression, known, {c.name: c for c in base if c.aggregate})
+        probe = Calculation(
+            "__prism_preview",
+            body.expression,
+            f.type,
+            f.sql,
+            tuple(f.params),
+            frozenset(f.uses),
+            f.aggregate,
+        )
+        if f.aggregate:
+            # A measure: show its value over the whole dataset.
+            spec = QuerySpec(
+                measures=[AggregationSpec(column=probe.name, function=AggFunction.VALUE)]
+            )
+            outcome = svc.queries.run(s, a, ds, spec, calculations=[*base, probe])
+            total = jsonable_rows(outcome.result.rows)
+            return {
+                "type": f.type,
+                "aggregate": True,
+                "columns": [],
+                "rows": [{"inputs": {}, "value": total[0].get(probe.name) if total else None}],
+            }
+        shown = [c for c in known if c in f.uses][:4]
         outcome = svc.queries.run(
-            s, a, ds, QuerySpec(columns=[*shown, probe.name], limit=8),
+            s,
+            a,
+            ds,
+            QuerySpec(columns=[*shown, probe.name], limit=8),
             calculations=[*base, probe],
         )
         rows = jsonable_rows(outcome.result.rows)
         return {
-            "type": kind,
+            "type": f.type,
+            "aggregate": False,
             "columns": shown,
             "rows": [
                 {"inputs": {c: r.get(c) for c in shown}, "value": r.get(probe.name)} for r in rows
