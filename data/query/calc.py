@@ -14,6 +14,13 @@ tree is type-checked before it is compiled. Division by zero gives an empty
 value, not an error.
 
 Types are Prism's: integer, float, string, date, boolean.
+
+A formula that uses an aggregate — SUM, AVG, MIN, MAX, MEDIAN, COUNT, COUNTD —
+is an *aggregate field* (a measure): ``(SUM([Revenue]) - SUM([Cost])) /
+SUM([Revenue])`` is the margin of whatever group a chart shows, which is not
+the average of each row's margin. Every column in such a formula must sit
+inside an aggregate, and aggregates do not nest. Aggregate fields may use
+earlier aggregate fields; any formula that does becomes one too.
 """
 
 from __future__ import annotations
@@ -229,7 +236,7 @@ class _Parser:
         raise CalcError(f"Expected a value at position {tok.pos + 1}, found {found!r}")
 
     def call(self, name: str, tok: Token) -> Node:
-        if name not in FUNCTIONS:
+        if name not in FUNCTIONS and name not in AGGREGATES:
             raise CalcError(f"Unknown function {tok.text}()")
         self.take()  # (
         self.deeper()
@@ -258,6 +265,13 @@ class _Ctx:
     columns: dict[str, str]
     params: list[Any]
     used: set[str] = field(default_factory=set)
+    # Aggregate fields defined so far: name -> (sql, type, params, uses).
+    aggregates: dict[str, tuple[str, str, tuple[Any, ...], frozenset[str]]] = field(
+        default_factory=dict
+    )
+    depth: int = 0  # > 0 inside an aggregate's argument
+    bare: set[str] = field(default_factory=set)  # columns read outside any aggregate
+    state: dict[str, bool] = field(default_factory=dict)  # "aggregate": seen one
 
     def bind(self, value: Any) -> str:
         self.params.append(value)
@@ -328,11 +342,21 @@ def _compile(node: Node, ctx: _Ctx) -> Compiled:
         return "NULL", "null"
     if k == "col":
         name = node.value
+        if name in ctx.aggregates:
+            if ctx.depth:
+                raise CalcError(f"[{name}] is already aggregated, so it cannot go inside one")
+            agg_sql, agg_type, agg_params, agg_uses = ctx.aggregates[name]
+            ctx.params.extend(agg_params)
+            ctx.used |= {name, *agg_uses}
+            ctx.state["aggregate"] = True
+            return f"({agg_sql})", agg_type
         if name not in ctx.columns:
             near = [c for c in ctx.columns if c.casefold() == str(name).casefold()]
             hint = f" Did you mean [{near[0]}]?" if near else ""
             raise CalcError(f"There is no column [{name}].{hint}")
         ctx.used.add(name)
+        if not ctx.depth:
+            ctx.bare.add(name)
         return _q(name), ctx.columns[name]
     if k == "neg":
         sql, t = _compile(node.args[0], ctx)
@@ -349,7 +373,15 @@ def _compile(node: Node, ctx: _Ctx) -> Compiled:
 
 def _isolated(node: Node, ctx: _Ctx) -> tuple[str, str, list[Any]]:
     """Compile ``node`` with its own parameter list, so the caller decides their order."""
-    sub = _Ctx(columns=ctx.columns, params=[], used=ctx.used)
+    sub = _Ctx(
+        columns=ctx.columns,
+        params=[],
+        used=ctx.used,
+        aggregates=ctx.aggregates,
+        depth=ctx.depth,
+        bare=ctx.bare,
+        state=ctx.state,
+    )
     sql, kind = _compile(node, sub)
     return sql, kind, sub.params
 
@@ -535,7 +567,58 @@ FUNCTIONS: dict[str, Fn] = {
 }
 
 
+def _agg_number(name: str, sql: str, keep_type: bool) -> Fn:
+    def fn(args: list[Compiled], ctx: _Ctx) -> Compiled:
+        _arity(name, args, 1)
+        _need("number", args[0][1], f"{name}()")
+        kind = args[0][1] if keep_type and args[0][1] in NUMERIC else "float"
+        return sql.format(args[0][0]), kind
+
+    return fn
+
+
+def _agg_order(name: str) -> Fn:
+    def fn(args: list[Compiled], ctx: _Ctx) -> Compiled:
+        _arity(name, args, 1)
+        if args[0][1] == "boolean":
+            raise CalcError(f"{name}() needs numbers, dates or text, not true/false")
+        return f"{name}({args[0][0]})", args[0][1]
+
+    return fn
+
+
+def _count(args: list[Compiled], ctx: _Ctx) -> Compiled:
+    _arity("COUNT", args, 0, 1)
+    return (f"COUNT({args[0][0]})" if args else "COUNT(*)"), "integer"
+
+
+def _countd(args: list[Compiled], ctx: _Ctx) -> Compiled:
+    _arity("COUNTD", args, 1)
+    return f"COUNT(DISTINCT {args[0][0]})", "integer"
+
+
+AGGREGATES: dict[str, Fn] = {
+    "SUM": _agg_number("SUM", "SUM({})", keep_type=True),
+    "AVG": _agg_number("AVG", "AVG({})", keep_type=False),
+    "MEDIAN": _agg_number("MEDIAN", "MEDIAN({})", keep_type=False),
+    "MIN": _agg_order("MIN"),
+    "MAX": _agg_order("MAX"),
+    "COUNT": _count,
+    "COUNTD": _countd,
+}
+
+
 def _call(node: Node, ctx: _Ctx) -> Compiled:
+    if node.value in AGGREGATES:
+        if ctx.depth:
+            raise CalcError(f"{node.value}() cannot go inside another aggregate")
+        ctx.depth += 1
+        try:
+            args = [_compile(a, ctx) for a in node.args]
+        finally:
+            ctx.depth -= 1
+        ctx.state["aggregate"] = True
+        return AGGREGATES[node.value](args, ctx)
     args = [_compile(a, ctx) for a in node.args]
     return FUNCTIONS[node.value](args, ctx)
 
@@ -555,15 +638,45 @@ class Calculation:
     sql: str
     params: tuple[Any, ...]
     uses: frozenset[str] = frozenset()  # the columns and fields it reads
+    aggregate: bool = False  # a measure: SQL is an aggregate over a group's rows
 
 
-def compile_expression(text: str, columns: dict[str, str]) -> tuple[str, str, list[Any], set[str]]:
-    """``(sql, type, params, used columns)`` for a formula over ``columns`` (name → type)."""
-    ctx = _Ctx(columns=dict(columns), params=[])
+@dataclass(frozen=True)
+class Formula:
+    sql: str
+    type: str
+    params: list[Any]
+    uses: set[str]
+    aggregate: bool
+
+
+def compile_formula(
+    text: str,
+    columns: dict[str, str],
+    aggregates: dict[str, Calculation] | None = None,
+) -> Formula:
+    """Check and compile a formula over ``columns`` (name → type) and aggregate fields."""
+    ctx = _Ctx(
+        columns=dict(columns),
+        params=[],
+        aggregates={c.name: (c.sql, c.type, c.params, c.uses) for c in (aggregates or {}).values()},
+    )
     sql, t = _compile(parse(text), ctx)
     if t == "null":
         raise CalcError("The formula is always empty")
-    return sql, t, ctx.params, ctx.used
+    aggregate = bool(ctx.state.get("aggregate"))
+    if aggregate and ctx.bare:
+        cols = ", ".join(f"[{c}]" for c in sorted(ctx.bare))
+        raise CalcError(
+            f"In a formula with SUM() or another aggregate, every column must be inside one: {cols}"
+        )
+    return Formula(sql, t, ctx.params, ctx.used, aggregate)
+
+
+def compile_expression(text: str, columns: dict[str, str]) -> tuple[str, str, list[Any], set[str]]:
+    """``(sql, type, params, used columns)`` for a row-level formula (no aggregate fields)."""
+    f = compile_formula(text, columns)
+    return f.sql, f.type, f.params, f.uses
 
 
 def check_name(name: str, taken: set[str]) -> str:
@@ -590,21 +703,28 @@ def build(
     if strict and len(definitions) > MAX_CALCULATIONS:
         raise CalcError(f"A dataset can have at most {MAX_CALCULATIONS} calculated fields")
     known = dict(columns)
+    aggregates: dict[str, Calculation] = {}
     out: list[Calculation] = []
     for d in definitions[:MAX_CALCULATIONS]:
         try:
-            name = check_name(str(d.get("name", "")), set(known))
+            name = check_name(str(d.get("name", "")), set(known) | set(aggregates))
             expression = str(d.get("expression", "")).strip()
             try:
-                sql, t, params, used = compile_expression(expression, known)
+                f = compile_formula(expression, known, aggregates)
             except CalcError as exc:
                 raise CalcError(f"{name}: {exc}") from exc
         except CalcError:
             if strict:
                 raise
             continue
-        out.append(Calculation(name, expression, t, sql, tuple(params), frozenset(used)))
-        known[name] = t
+        calc = Calculation(
+            name, expression, f.type, f.sql, tuple(f.params), frozenset(f.uses), f.aggregate
+        )
+        out.append(calc)
+        if f.aggregate:
+            aggregates[name] = calc
+        else:
+            known[name] = f.type
     return out
 
 

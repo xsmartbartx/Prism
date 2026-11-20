@@ -65,7 +65,10 @@ def dataset_calculations(dataset: Dataset, version: DatasetVersion) -> list[Calc
 def dataset_types(dataset: Dataset, version: DatasetVersion) -> dict[str, str]:
     """Column name → type, calculated fields included."""
     types = version_types(version)
-    types.update({c.name: c.type for c in dataset_calculations(dataset, version)})
+    # Aggregate fields are measures, not columns: they cannot be filtered or grouped on.
+    types.update(
+        {c.name: c.type for c in dataset_calculations(dataset, version) if not c.aggregate}
+    )
     return types
 
 
@@ -99,10 +102,8 @@ class QueryService:
         if actor is not None:
             actor.require("read")
         version = self.current_version(s, dataset, version_id)
-        calcs = (
-            calculations if calculations is not None else dataset_calculations(dataset, version)
-        )
-        types = version_types(version) | {c.name: c.type for c in calcs}
+        calcs = calculations if calculations is not None else dataset_calculations(dataset, version)
+        types = version_types(version) | {c.name: c.type for c in calcs if not c.aggregate}
         compiler = QueryCompiler(
             column_types=types,
             max_limit=max_limit or self.settings.query_row_limit,

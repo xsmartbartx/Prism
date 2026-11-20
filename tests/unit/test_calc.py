@@ -207,3 +207,88 @@ def test_executes_in_duckdb(parquet: Path) -> None:
         filters=[FilterSpec(column="Year", operator=FilterOp.EQ, value=2026)],
     ), defs)
     assert grouped == [{"Size": "Bulk", "Profit": 40.0}, {"Size": "Single", "Profit": 0.0}]
+
+
+class TestAggregates:
+    def test_aggregate_fields(self) -> None:
+        from data.query.calc import compile_formula
+
+        f = compile_formula("(SUM([Revenue]) - SUM([Cost])) / SUM([Revenue])", COLS)
+        assert f.aggregate and f.type == "float" and f.uses == {"Revenue", "Cost"}
+        assert compile_formula("SUM([Units])", COLS).type == "integer"
+        assert compile_formula("COUNT()", COLS).type == "integer"
+        assert compile_formula("COUNTD([Region])", COLS).type == "integer"
+        assert compile_formula("MAX([Order Date])", COLS).type == "date"
+        assert compile_formula("AVG(IF([Paid], [Revenue], 0))", COLS).aggregate
+        assert not compile_formula("[Revenue] * 2", COLS).aggregate
+
+    @pytest.mark.parametrize(
+        ("text", "message"),
+        [
+            ("SUM([Revenue]) / [Cost]", "every column must be inside one: \\[Cost\\]"),
+            ("SUM(SUM([Revenue]))", "cannot go inside another aggregate"),
+            ("SUM([Region])", "SUM\\(\\) needs a number"),
+            ("MAX([Paid])", "not true/false"),
+            ("COUNT([Units], [Cost])", "takes 0 to 1"),
+        ],
+    )
+    def test_aggregate_errors(self, text: str, message: str) -> None:
+        from data.query.calc import compile_formula
+
+        with pytest.raises(CalcError, match=message):
+            compile_formula(text, COLS)
+
+    def test_fields_build_on_each_other(self) -> None:
+        calcs = build(
+            [
+                {"name": "Profit", "expression": "[Revenue] - [Cost]"},
+                {"name": "Total profit", "expression": "SUM([Profit])"},
+                {"name": "Margin", "expression": "[Total profit] / SUM([Revenue])"},
+            ],
+            COLS,
+        )
+        assert [(c.name, c.aggregate) for c in calcs] == [
+            ("Profit", False), ("Total profit", True), ("Margin", True),
+        ]
+        assert {"Profit", "Revenue"} <= calcs[2].uses
+        with pytest.raises(CalcError, match="already aggregated"):
+            build([{"name": "T", "expression": "SUM([Revenue])"},
+                   {"name": "X", "expression": "SUM([T])"}], COLS)
+
+    def test_compiler_keeps_aggregates_as_values(self) -> None:
+        calcs = build([{"name": "Margin", "expression": "SUM([Revenue] - [Cost]) / SUM([Revenue])"}],
+                      COLS)
+        for spec, message in (
+            (QuerySpec(dimensions=["Margin"]), "aggregate field"),
+            (QuerySpec(filters=[FilterSpec(column="Margin", operator=FilterOp.GT, value=0)]),
+             "aggregate field"),
+            (QuerySpec(dimensions=["Region"],
+                       measures=[AggregationSpec(column="Margin", function=AggFunction.SUM)]),
+             "use the function 'value'"),
+            (QuerySpec(dimensions=["Region"],
+                       measures=[AggregationSpec(column="Revenue", function=AggFunction.VALUE)]),
+             "'value' is for aggregate fields"),
+        ):
+            result = QueryCompiler(column_types=COLS, calculations=calcs).compile(spec)
+            assert not result.success and any(message in e for e in result.errors), result.errors
+
+
+def test_ratio_of_sums_is_not_the_average_of_ratios(parquet: Path) -> None:
+    defs = [
+        {"name": "Row margin", "expression": "([Revenue] - [Cost]) / [Revenue]"},
+        {"name": "Margin", "expression": "(SUM([Revenue]) - SUM([Cost])) / SUM([Revenue])"},
+        {"name": "Orders", "expression": "COUNT()"},
+    ]
+    rows = run(parquet, QuerySpec(
+        dimensions=["Region"],
+        measures=[
+            AggregationSpec(column="Margin", function=AggFunction.VALUE),
+            AggregationSpec(column="Row margin", function=AggFunction.AVG),
+            AggregationSpec(column="Orders", function=AggFunction.VALUE),
+        ],
+        filters=[FilterSpec(column="Region", operator=FilterOp.EQ, value="EU")],
+    ), defs)
+    # EU: revenue 100 + 80, cost 60 + 0 -> true margin 120/180; average of row margins 0.7.
+    assert rows[0]["Region"] == "EU" and rows[0]["Orders"] == 2
+    assert rows[0]["Margin"] == pytest.approx(120 / 180)
+    assert rows[0]["Row margin"] == pytest.approx((0.4 + 1.0) / 2)

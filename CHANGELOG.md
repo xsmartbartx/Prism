@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Aggregate fields: calculated fields can use `SUM`, `AVG`, `MIN`, `MAX`, `MEDIAN`, `COUNT` and `COUNTD`, which makes them measures that charts calculate for each group, e.g. the true margin `(SUM([Revenue]) - SUM([Cost])) / SUM([Revenue])` rather than an average of per-row margins. They appear under **Aggregate fields** in the chart builder's Values (function *formula*, `"value"` in the API), can use row fields and earlier aggregate fields, and preview their value over the whole dataset. Every column must be inside an aggregate, and aggregates do not nest.
+
 ## 1.6.0 — 2026-11-19
 
 - Calculated fields: on a dataset's Overview, add columns computed from the others with spreadsheet-like formulas (`[Revenue] - [Cost]`, `IF([Units] >= 10, 'Bulk', 'Single')`, `YEAR([Order Date])`), checked as you type with a preview of the first rows. Charts, dashboard filters and click-to-filter use them like any column. Formulas are parsed and type-checked by Prism's own grammar (bracketed columns, a fixed function list, bound literal values) and never reach SQL as text; division by zero gives an empty value. A field a chart uses cannot be removed. Adds migration `0005`.

@@ -70,13 +70,21 @@ class QueryCompiler:
         max_limit: int = 50_000,
         calculations: Sequence[Calculation] = (),
     ) -> None:
-        self._calcs = list(calculations)
-        # Calculated fields are columns like any other to everything below.
+        self._calcs = [c for c in calculations if not c.aggregate]
+        self._aggregates = {c.name: c for c in calculations if c.aggregate}
+        # Row-level calculated fields are columns like any other to everything below; aggregate
+        # fields can only be measures (function "value").
         self._column_types = dict(column_types or {}) | {c.name: c.type for c in self._calcs}
         self._dataset_columns = set(dataset_columns or set()) | set(self._column_types)
         self._max_limit = max_limit
 
     def _check_column(self, name: str, what: str, errors: list[str]) -> bool:
+        if name in self._aggregates:
+            errors.append(
+                f"'{name}' is an aggregate field: use it as a value (function 'value'), "
+                "not to group, filter or list rows"
+            )
+            return False
         if self._dataset_columns and name not in self._dataset_columns:
             errors.append(
                 f"{what} '{name}' not found in dataset columns. "
@@ -97,6 +105,19 @@ class QueryCompiler:
         for measure in spec.measures:
             if measure.function.value not in _KNOWN_FUNCTIONS:  # pragma: no cover - enum-guarded
                 errors.append(f"Unknown aggregation function '{measure.function.value}'")
+            if measure.column in self._aggregates:
+                if measure.function != AggFunction.VALUE:
+                    errors.append(
+                        f"'{measure.column}' is already aggregated by its formula; "
+                        "use the function 'value'"
+                    )
+                continue
+            if measure.function == AggFunction.VALUE:
+                errors.append(
+                    f"'value' is for aggregate fields; '{measure.column}' needs a function such "
+                    "as sum, avg or count"
+                )
+                continue
             if measure.column == "*":
                 if measure.function != AggFunction.COUNT:
                     errors.append("Only count may aggregate '*' (all rows)")
@@ -163,7 +184,11 @@ class QueryCompiler:
             | {f.column for f in spec.filters}
             | set(outputs if raw else [])
         )
-        calcs = needed(self._calcs, referenced | {s.column for s in spec.sort})
+        aggs = [self._aggregates[m.column] for m in spec.measures if m.column in self._aggregates]
+        reads = referenced | {s.column for s in spec.sort}
+        for agg in aggs:
+            reads |= agg.uses  # row columns and row fields its formula sums, counts, ...
+        calcs = needed(self._calcs, reads)
         plan = ExecutionPlan(
             select_columns=tuple(outputs),
             group_by_columns=tuple(spec.dimensions),
@@ -176,6 +201,11 @@ class QueryCompiler:
             column_types=tuple(sorted((c, t) for c, t in types.items() if c in referenced)),
             raw=raw,
             calculations=tuple((c.name, c.sql, c.params) for c in calcs),
+            measure_exprs=tuple(
+                (m.output_name, self._aggregates[m.column].sql, self._aggregates[m.column].params)
+                for m in spec.measures
+                if m.column in self._aggregates
+            ),
         )
         return CompilationResult(success=True, plan=plan)
 

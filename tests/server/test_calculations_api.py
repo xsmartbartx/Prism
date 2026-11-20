@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from tests.server.test_api import H, client, import_sales, setup_admin
@@ -104,3 +105,43 @@ def test_viewers_cannot_edit(client: TestClient) -> None:
     anon = TestClient(client.app)
     assert anon.put(f"/api/v1/datasets/{ds}/calculations", json={"calculations": []},
                     headers=H).status_code == 401
+
+
+def test_aggregate_fields(client: TestClient) -> None:
+    ds = _setup(client)
+    fields = [*FIELDS, {"name": "Avg order", "expression": "SUM([Revenue]) / COUNT()"}]
+    r = _put(client, ds, fields)
+    assert r.status_code == 200, r.text
+    saved = {f["name"]: f for f in r.json()["calculations"]}
+    assert saved["Avg order"]["aggregate"] is True and saved["Big order"]["aggregate"] is False
+
+    preview = client.post(f"/api/v1/datasets/{ds}/calculations/preview", headers=H, json={
+        "expression": "SUM([Revenue]) / COUNT()", "calculations": FIELDS,
+    }).json()
+    assert preview["aggregate"] is True and preview["columns"] == []
+    sums = client.post(f"/api/v1/datasets/{ds}/query", headers=H, json={"measures": [
+        {"column": "Revenue", "function": "sum"}, {"column": "*", "function": "count", "alias": "n"},
+    ]}).json()["rows"][0]
+    # COUNT() counts every row, including any without revenue, unlike AVG([Revenue]).
+    assert preview["rows"][0]["value"] == pytest.approx(sums["Revenue"] / sums["n"])
+
+    chart = {
+        "dataset_id": ds, "name": "Average order by region",
+        "query": {"dimensions": ["Region"], "measures": [{"column": "Avg order", "function": "value"}]},
+        "view": {"mark": "bar", "encodings": [{"channel": "x", "field": "Region"},
+                                               {"channel": "y", "field": "Avg order"}]},
+    }
+    r = client.post("/api/v1/charts", json=chart, headers=H)
+    assert r.status_code == 201, r.text
+    rows = client.get(f"/api/v1/charts/{r.json()['id']}/data").json()["rows"]
+    assert rows and all(isinstance(row["Avg order"], float) for row in rows)
+
+    grouped = client.post(f"/api/v1/datasets/{ds}/query", headers=H,
+                          json={"dimensions": ["Avg order"]})
+    assert grouped.status_code == 400 and "aggregate field" in grouped.text
+
+    # Aggregate fields cannot be dashboard filters; row fields can.
+    fields_out = client.post("/api/v1/dashboards/filter-fields", headers=H,
+                             json={"chart_ids": [r.json()["id"]]}).json()
+    names = {f["field"] for f in fields_out}
+    assert "Avg order" not in names and "Region" in names

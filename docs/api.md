@@ -77,7 +77,7 @@ curl -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
      "$PRISM/api/v1/datasets/$DATASET_ID/calculations/preview"
 ```
 
-`GET /api/v1/datasets/{id}` lists them under `calculations` (`name`, `expression`, `type`); queries, charts and dashboard filters refer to them by name like columns. An invalid formula answers 400 with the reason; removing a field a chart uses answers 409.
+`GET /api/v1/datasets/{id}` lists them under `calculations` (`name`, `expression`, `type`, `aggregate`); queries, charts and dashboard filters refer to row fields by name like columns. An aggregate field (its formula uses `SUM`, `COUNT`, …) is a measure: use it as `{"column": "<field>", "function": "value"}`; it cannot be a dimension or a filter. Its preview returns its value over the whole dataset. An invalid formula answers 400 with the reason; removing a field a chart uses answers 409.
 
 ## Import from a PostgreSQL database
 
