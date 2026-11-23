@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from presentation.export import to_csv, to_xlsx
 from server.api.deps import actor, services
-from server.api.routes.datasets import _filename
+from server.api.routes.datasets import attachment
 from server.api.serializers import chart_out, dashboard_out, share_out
 from server.container import Services
 from server.errors import NotFound
@@ -228,7 +228,7 @@ def export_chart(
     return Response(
         content=body,
         media_type=media,
-        headers={"Content-Disposition": f'attachment; filename="{_filename(name, format)}"'},
+        headers={"Content-Disposition": attachment(name, format)},
     )
 
 
@@ -350,6 +350,73 @@ def render_dashboard_chart(
             s, a, chart, theme=theme, width=width, height=height, selections=selections
         )
     return {"svg": r.svg, "applied": list(r.applied), "skipped": list(r.skipped)}
+
+
+def _selection_text(sel: Any) -> str:
+    if sel.kind == "values":
+        return ", ".join(sel.values)
+    start = sel.start.isoformat() if sel.start else "…"
+    end = sel.end.isoformat() if sel.end else "…"
+    return f"{start} to {end}"
+
+
+@router.get("/dashboards/{dashboard_id}/export")
+def export_dashboard(
+    dashboard_id: str,
+    request: Request,
+    format: str = Query(default="xlsx", pattern="^xlsx$"),
+    a: Actor = Depends(actor),
+    svc: Services = Depends(services),
+) -> Response:
+    """Every tile's data in one workbook, narrowed by the filters in the query string, as shown."""
+    from datetime import UTC, datetime
+
+    from presentation.export import to_xlsx_workbook
+
+    a.require("explore")
+    with svc.db.transaction() as s:
+        d = svc.artifacts.get_dashboard(s, a, dashboard_id)
+        items = request.query_params.multi_items()
+        selections = parse_selections(d.filters or [], items)
+        cross, source = parse_cross_filter(items)
+        sheets: list[tuple[str, list[str], list[dict[str, Any]]]] = []
+        notes: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for tile in sorted(d.layout, key=lambda t: (t.get("y", 0), t.get("x", 0))):
+            chart_id = tile.get("chart_id")
+            if not chart_id or chart_id in seen:
+                continue
+            seen.add(chart_id)
+            chart = svc.artifacts.get_chart(s, a, chart_id)
+            sels = [*selections, *([cross] if cross is not None and source != chart_id else [])]
+            r = svc.artifacts.render_chart(s, a, chart, selections=sels)
+            sheets.append((chart.name, list(r.outcome.result.columns), list(r.outcome.result.rows)))
+            if r.skipped:
+                notes.append((chart.name, "Not filtered by " + ", ".join(r.skipped)))
+        summary = [
+            ("Dashboard", d.name),
+            ("Exported", datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")),
+            ("By", a.label),
+        ]
+        for sel in [*selections, *([cross] if cross is not None else [])]:
+            summary.append((f"Filter: {sel.label}", _selection_text(sel)))
+        summary += notes
+        audit.record(
+            s,
+            a,
+            "dashboard.export",
+            target_type="dashboard",
+            target_id=d.id,
+            description=f"Exported dashboard {d.name} as {format}",
+            details={"charts": len(sheets), "filters": len(selections) + (cross is not None)},
+        )
+        name = d.name
+    body = to_xlsx_workbook(sheets, summary=summary)
+    return Response(
+        content=body,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": attachment(name, "xlsx")},
+    )
 
 
 @router.delete("/dashboards/{dashboard_id}", status_code=204)

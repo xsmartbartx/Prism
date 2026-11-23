@@ -69,6 +69,21 @@ def _filename(name: str, ext: str) -> str:
     return f"{safe[:80]}.{ext}"
 
 
+def attachment(name: str, ext: str) -> str:
+    """A Content-Disposition value safe for any name.
+
+    Header values must be Latin-1, so ``filename`` carries an ASCII fallback and ``filename*``
+    the real name, UTF-8 and percent-encoded (RFC 6266), which browsers prefer.
+    """
+    import unicodedata
+    from urllib.parse import quote
+
+    full = _filename(name, ext)
+    plain = unicodedata.normalize("NFKD", full).encode("ascii", "ignore").decode()
+    stem = plain.rsplit(".", 1)[0].strip(" _") or "export"
+    return f'attachment; filename="{stem}.{ext}"; filename*=UTF-8\'\'{quote(full, safe="")}'
+
+
 @router.get("")
 def list_datasets(
     q: str = Query(default="", max_length=200),
@@ -477,5 +492,5 @@ def export(
     return Response(
         content=body,
         media_type=media,
-        headers={"Content-Disposition": f'attachment; filename="{_filename(name, format)}"'},
+        headers={"Content-Disposition": attachment(name, format)},
     )

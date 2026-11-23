@@ -87,7 +87,8 @@ export async function download(path: string): Promise<void> {
   }
   const blob = await res.blob();
   const cd = res.headers.get("content-disposition") ?? "";
-  const name = /filename="([^"]+)"/.exec(cd)?.[1] ?? "download";
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(cd)?.[1];
+  const name = (encoded ? decodeURIComponent(encoded) : /filename="([^"]+)"/.exec(cd)?.[1]) ?? "download";
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

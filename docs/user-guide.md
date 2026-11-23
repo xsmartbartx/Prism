@@ -153,6 +153,14 @@ Viewers of a link see the chart as displayed — not the underlying dataset.
 
 Exports neutralise spreadsheet formulas in text cells (cells beginning with `=`, `+`, `-`, `@` are prefixed with `'`) so a malicious value can't execute when opened.
 
+### Export a dashboard
+
+On a dashboard, with the filters and click selections you want:
+
+- **Print** opens a print view: the dashboard's name, the filters in words, the time it was generated, and every chart in light colours laid out for paper. The print dialog opens when the charts are ready; choose *Save as PDF* to send it as a monthly report. Add `?preview` to the print view's address to look at it without the dialog.
+- **Excel** downloads one workbook with a sheet per chart (its data as the chart shows it, filters applied) and an *About* sheet listing the dashboard, the time, who exported it, the filters, and any chart the filters could not apply to. Text that a spreadsheet could run as a formula is neutralised, as in every Prism export. Exports are recorded in the audit log.
+
+
 ## Keyboard & accessibility
 
 All controls are reachable by keyboard; dialogs close with <kbd>Esc</kbd>. Charts include a text title and description for screen readers, every mark has a tooltip with its exact value, and colours come from a colour-blind-safe palette.

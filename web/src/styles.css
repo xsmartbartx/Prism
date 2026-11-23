@@ -345,3 +345,23 @@ button.chip:hover { border-color: var(--accent); }
 .copy-field .input { font-family: var(--mono); font-size: 12px; }
 .amb { background: var(--warning-soft) !important; }
 .col-excluded { opacity: .45; }
+
+/* ---------- Dashboard print view ---------- */
+.print-page { margin: 0 auto; padding: 24px; background: #fff; color: #111; min-height: 100vh; }
+.print-toolbar { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin-bottom: 12px; }
+.print-head h1 { margin: 0 0 4px; font-size: 24px; color: #111; }
+.print-head p { margin: 0 0 4px; color: #333; }
+.print-filters { margin: 6px 0 0; padding-left: 18px; font-size: 13px; color: #333; }
+.print-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+.print-tile { border: 1px solid #ddd; border-radius: 6px; padding: 10px 12px; break-inside: avoid; page-break-inside: avoid; }
+.print-tile h2 { font-size: 14px; margin: 0 0 6px; color: #111; }
+.print-page .chart-svg svg { width: 100%; height: auto; }
+.print-page .tile-note { color: #555; }
+.print-foot { margin-top: 16px; border-top: 1px solid #eee; padding-top: 6px; }
+@media print {
+  @page { margin: 12mm; }
+  html, body { background: #fff !important; }
+  .no-print { display: none !important; }
+  .print-page { padding: 0; max-width: none !important; }
+  .print-grid { gap: 10px; }
+}

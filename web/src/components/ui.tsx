@@ -161,10 +161,41 @@ export function StatusBadge({ status }: { status: string }) {
   return <span className={`badge ${cls}`}>{status}</span>;
 }
 
-export function ChartSvg({ svg, minHeight }: { svg: string | null; minHeight?: number }) {
+const _UNSAFE_ELEMENTS = "script, foreignObject, iframe, object, embed, image, use, animate, set";
+
+/**
+ * Chart SVG comes from Prism's own renderer, which escapes all text. As defence in depth it is
+ * still parsed (never injected as HTML) and stripped of anything that could run or load:
+ * scripts, embedded HTML, event handlers and links to anything but the document itself.
+ */
+export function safeSvg(markup: string): SVGSVGElement | null {
+  const doc = new DOMParser().parseFromString(markup, "image/svg+xml");
+  const root = doc.documentElement;
+  if (root.nodeName.toLowerCase() !== "svg" || doc.getElementsByTagName("parsererror").length) return null;
+  root.querySelectorAll(_UNSAFE_ELEMENTS).forEach((n) => n.remove());
+  for (const el of [root, ...Array.from(root.querySelectorAll("*"))]) {
+    for (const attr of Array.from(el.attributes)) {
+      const name = attr.name.toLowerCase();
+      const value = attr.value.replace(/\s+/g, "").toLowerCase();
+      const link = name === "href" || name.endsWith(":href") || name === "src";
+      if (name.startsWith("on") || (link && !value.startsWith("#")) || value.startsWith("javascript:")) {
+        el.removeAttribute(attr.name);
+      }
+    }
+  }
+  return document.importNode(root, true) as unknown as SVGSVGElement;
+}
+
+export function ChartSvg({ svg, minHeight }: Readonly<{ svg: string | null; minHeight?: number }>) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const node = svg ? safeSvg(svg) : null;
+    el.replaceChildren(...(node ? [node] : []));
+  }, [svg]);
   if (!svg) return <div className="skeleton" style={{ height: minHeight ?? 260 }} />;
-  // SVG is produced by Prism's server-side renderer, which escapes all text.
-  return <div className="chart-svg" dangerouslySetInnerHTML={{ __html: svg }} />;
+  return <div className="chart-svg" ref={box} />;
 }
 
 export function fmtNum(n: number | null | undefined): string {
