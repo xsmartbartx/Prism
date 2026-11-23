@@ -70,10 +70,13 @@ export default function DashboardPrint() {
   const autoPrint = !params.has("preview");
   useEffect(() => {
     if (!autoPrint || !data || printed || done < tiles.length) return;
-    setPrinted(true);
     document.title = data.name;
-    // Let the charts paint before the dialog opens.
-    const t = setTimeout(() => window.print(), 300);
+    // Let the charts paint before the dialog opens. "printed" is set inside the timer: setting it
+    // here would re-run this effect, whose cleanup would cancel the timer before it fired.
+    const t = setTimeout(() => {
+      setPrinted(true);
+      window.print();
+    }, 300);
     return () => clearTimeout(t);
   }, [autoPrint, data, done, tiles.length, printed]);
 
@@ -98,7 +101,7 @@ export default function DashboardPrint() {
           return (
             <section key={t.chart_id} className="print-tile" style={{ gridColumn: `span ${t.w}` }}>
               <h2>{chart?.name ?? "Chart"}</h2>
-              <PrintTile dashboardId={data.id} chartId={t.chart_id} width={Math.round((t.w / 12) * PAGE_WIDTH) - 24}
+              <PrintTile dashboardId={data.id} chartId={t.chart_id} width={Math.max(200, Math.round((t.w / 12) * PAGE_WIDTH) - 24)}
                 query={query(t.chart_id)} onDone={() => setDone((n) => n + 1)} />
             </section>
           );

@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from presentation.export import to_csv, to_xlsx
 from server.api.deps import actor, services
-from server.api.routes.datasets import _filename
+from server.api.routes.datasets import attachment
 from server.api.serializers import chart_out, dashboard_out, share_out
 from server.container import Services
 from server.errors import NotFound
@@ -228,7 +228,7 @@ def export_chart(
     return Response(
         content=body,
         media_type=media,
-        headers={"Content-Disposition": f'attachment; filename="{_filename(name, format)}"'},
+        headers={"Content-Disposition": attachment(name, format)},
     )
 
 
@@ -415,7 +415,7 @@ def export_dashboard(
     return Response(
         content=body,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{_filename(name, "xlsx")}"'},
+        headers={"Content-Disposition": attachment(name, "xlsx")},
     )
 
 

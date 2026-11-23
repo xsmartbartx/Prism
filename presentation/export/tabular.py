@@ -74,12 +74,16 @@ def sheet_names(names: list[str]) -> list[str]:
     """Excel-safe, unique sheet names (31 characters, no []:*?/\\, case-insensitive)."""
     out: list[str] = []
     seen: set[str] = set()
+    def fit(text: str, room: int) -> str:
+        # Excel refuses names that start or end with an apostrophe, also once shortened.
+        return text[:room].strip(" '") or "Sheet"
+
     for raw in names:
         base = "".join("_" if ch in _SHEET_FORBIDDEN else ch for ch in raw).strip(" '") or "Sheet"
-        name, n = base[:31], 2
+        name, n = fit(base, 31), 2
         while name.casefold() in seen:
             suffix = f" ({n})"
-            name, n = base[: 31 - len(suffix)] + suffix, n + 1
+            name, n = fit(base, 31 - len(suffix)) + suffix, n + 1
         seen.add(name.casefold())
         out.append(name)
     return out
