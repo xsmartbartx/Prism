@@ -13,7 +13,7 @@ RUN npm run build
 
 # ---------- 2. Runtime ----------
 FROM python:3.12-slim AS runtime
-ARG PRISM_VERSION=1.8.0
+ARG PRISM_VERSION=1.9.0
 LABEL org.opencontainers.image.title="Prism" \
       org.opencontainers.image.description="Self-hosted data platform: import, model, query and visualise data" \
       org.opencontainers.image.version="${PRISM_VERSION}"
