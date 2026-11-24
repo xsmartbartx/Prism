@@ -24,6 +24,7 @@ class MarkType(str, Enum):
     SCATTER = "scatter"
     PIE = "pie"
     KPI = "kpi"
+    PIVOT = "pivot"  # rows (x) × columns (color) → value (y), with totals
 
 
 class NumberFormat(str, Enum):
@@ -185,6 +186,19 @@ class ViewSpec(BaseModel):
         default=30, ge=2, le=500, description="Cap on categories before 'Other' grouping."
     )
 
+    totals: bool = Field(default=True, description="Pivot: show row and column totals.")
+
+    heatmap: bool = Field(default=False, description="Pivot: shade cells by value.")
+
+    total_function: str | None = Field(
+        default=None,
+        pattern="^(sum|min|max)$",
+        description=(
+            "Pivot: how cells combine into totals. Set by the server from the query's "
+            "aggregation; empty when totals of the cells would be wrong (an average, say)."
+        ),
+    )
+
     model_config = ConfigDict(frozen=True)
 
     def encodings_for(self, channel: EncodingChannel) -> list[Encoding]:
@@ -210,6 +224,7 @@ _REQUIRED: dict[MarkType, list[set[EncodingChannel]]] = {
     MarkType.PIE: [{EncodingChannel.X, EncodingChannel.COLOR}, {EncodingChannel.Y}],
     MarkType.KPI: [{EncodingChannel.Y}],
     MarkType.TABLE: [],
+    MarkType.PIVOT: [{EncodingChannel.X}, {EncodingChannel.Y}],
 }
 
 
@@ -237,4 +252,6 @@ def validate_view(spec: ViewSpec, output_columns: list[str] | set[str]) -> list[
         errors.append(f"Only one '{c.value}' encoding is allowed")
     if len(spec.encodings_for(EncodingChannel.Y)) > 1 and spec.encoding_for(EncodingChannel.COLOR):
         errors.append("Use either several y encodings or a color encoding, not both")
+    if spec.mark == MarkType.PIVOT and len(spec.encodings_for(EncodingChannel.Y)) > 1:
+        errors.append("A pivot table shows one value; pick one")
     return errors

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Pivot tables: a **Pivot** chart type lays one value out as a grid, with a field down the rows and, optionally, another across the columns (for example revenue by region × channel). Rows and columns get totals when they add up correctly (sums, counts, minimums and maximums) and none for averages, medians or distinct counts, where a total would mislead; **Totals** turns them off. **Heat map** shades each cell by its value. Clicking a row on a dashboard filters the other charts to it. Up to 200 rows and 20 columns are shown, with a note when there are more.
+- Chart builder: a sort on a field the chart no longer shows (for example after changing the x axis) is dropped instead of failing the preview.
+
 ## 1.8.0 — 2026-11-23
 
 - Dashboard export: **Print** opens a paper-ready view of the dashboard (name, filters in words, generation time, every chart in light colours) and the browser's print dialog, for printing or saving as PDF; **Excel** downloads a workbook with a sheet per chart, filters and click selections applied, and an *About* sheet summarising the dashboard, time, exporter, filters and any chart they could not apply to. Sheet names are made Excel-safe and unique; formula injection is neutralised; exports are audited.

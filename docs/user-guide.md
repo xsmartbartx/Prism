@@ -100,7 +100,7 @@ Every column in an aggregate field must be inside an aggregate, and aggregates d
 
 From a dataset click **New chart** (or **Charts → New chart**).
 
-- **Chart type** — bar, line, area, donut, scatter, KPI or table.
+- **Chart type** — bar, line, area, donut, scatter, KPI, table or pivot.
 - **Suggest best chart** — picks a sensible chart for the fields you've chosen.
 - **X axis / Slices** — what to compare. Date columns get a **time bucket** (day, week, month, quarter, year).
 - **Values** — aggregation (sum, average, count, distinct count, min, max, median) of a column, or *Row count*.
@@ -109,6 +109,15 @@ From a dataset click **New chart** (or **Charts → New chart**).
 - **Sort & limit**, **Display** (title, number format incl. currency, horizontal or stacked bars, value labels).
 
 The preview is rendered live by the server exactly as it will appear in exports and share pages. **Show data** reveals the numbers behind the chart. **Save** stores the chart; **SVG** and **Data** export it.
+
+### Pivot tables
+
+A pivot lays one value out as a grid: pick a field for **Rows**, optionally one for **Columns**, and a **Value** (for example *sum of Revenue* by *Region* × *Channel*). Empty combinations show *–*.
+
+- **Totals** adds a total for each row and column and a grand total, when they add up correctly: for sums and counts they are sums, for minimums and maximums the smallest or largest value. Averages, medians and distinct counts get no totals, because a total of those would be wrong.
+- **Heat map** shades each cell by its value, darkest for the largest.
+- Up to 200 rows and 20 columns are shown; a note says when there are more (filter, or swap rows and columns).
+- On a dashboard, clicking a row filters the other charts to it.
 
 ## Dashboards
 
@@ -132,7 +141,7 @@ Click a bar, a point on a line or a slice of a donut to filter the **other** cha
 - Click the same mark again, press **Esc** or use the chip's **×** to clear it. Clicking another mark replaces the selection; hold **Shift** (or **Ctrl**/**⌘**) to add or remove values.
 - On a time axis grouped by week, month, quarter or year, a click selects that whole period.
 - Charts without the clicked field say *Not filtered by …*, as with dashboard filters. Click selections combine with the dashboard filters.
-- The selection is in the page address too, so a copied link reproduces it. KPI cards, tables and scatter plots are not clickable, nor is a donut's *Other* slice.
+- The selection is in the page address too, so a copied link reproduces it. KPI cards, tables and scatter plots are not clickable, nor is a donut's *Other* slice; on a pivot table, click a row.
 - With a keyboard, **Tab** moves through the bars, points and slices (on charts with up to 60 of them) and **Enter** or **Space** selects one. Screen readers announce each one with its value.
 
 ## Share
