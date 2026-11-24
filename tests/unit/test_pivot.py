@@ -75,6 +75,25 @@ def test_without_columns_and_with_caps() -> None:
     assert "Showing the first 20 columns" in t and "C20" not in t
 
 
+def test_totals_count_cells_beyond_the_caps() -> None:
+    many = [{"Region": f"R{i}", "Channel": f"C{j}", "Revenue": 1.0} for i in range(205) for j in range(25)]
+    spec = ViewSpec(mark=MarkType.PIVOT, encodings=[X, C, Y], total_function="sum")
+    t = texts(SvgRenderer().render(spec, many))
+    assert "Showing the first 200 rows and 20 columns; totals include all of them" in t
+    assert t[t.index("R0") + 21] == "25"  # the row total counts all 25 columns, not the 20 shown
+    total_row = t[t.index("Total", 25):]
+    assert total_row[1] == "205" and total_row[21] == "5,125"
+
+
+def test_one_pick_per_row_and_cells_let_clicks_through() -> None:
+    svg = render(total_function="sum", heatmap=True)
+    assert svg.count("data-pick=") == 2  # the EU and US row backgrounds only
+    shades = re.findall(r"<rect[^>]*fill-opacity[^>]*>", svg)
+    assert shades and all('pointer-events="none"' in r and "data-pick" not in r for r in shades)
+    cells = re.findall(r"<text[^>]*>(?:EU|US|10|5|15|7|17|22|–)</text>", svg)
+    assert len(cells) == 11 and all('pointer-events="none"' in c for c in cells)
+
+
 def test_view_checks() -> None:
     spec = ViewSpec(mark=MarkType.PIVOT, encodings=[X])
     assert any("needs a y encoding" in e for e in validate_view(spec, []))

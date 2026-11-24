@@ -116,7 +116,7 @@ A pivot lays one value out as a grid: pick a field for **Rows**, optionally one 
 
 - **Totals** adds a total for each row and column and a grand total, when they add up correctly: for sums and counts they are sums, for minimums and maximums the smallest or largest value. Averages, medians and distinct counts get no totals, because a total of those would be wrong.
 - **Heat map** shades each cell by its value, darkest for the largest.
-- Up to 200 rows and 20 columns are shown; a note says when there are more (filter, or swap rows and columns).
+- Up to 200 rows and 20 columns are shown; a note says when there are more (filter, or swap rows and columns). Totals still include every row and column.
 - On a dashboard, clicking a row filters the other charts to it.
 
 ## Dashboards

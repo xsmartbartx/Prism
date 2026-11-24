@@ -795,19 +795,18 @@ class SvgRenderer:
         ce = spec.encoding_for(EncodingChannel.COLOR)
         if not xe or not ye:
             return self._empty(spec, theme)
-        row_keys: list[Any] = []
-        col_keys: list[Any] = []
+        row_seen: dict[Any, None] = {}  # insertion-ordered sets
+        col_seen: dict[Any, None] = {}
         cells: dict[tuple[Any, Any], float | None] = {}
         for r in rows:
             rk, ck = r.get(xe.field), (r.get(ce.field) if ce else None)
-            if rk not in row_keys:
-                row_keys.append(rk)
-            if ck not in col_keys:
-                col_keys.append(ck)
+            row_seen.setdefault(rk, None)
+            col_seen.setdefault(ck, None)
             cells[(rk, ck)] = _num_or_none(r.get(ye.field))
-        more_cols = len(col_keys) > _PIVOT_COLS
-        more_rows = len(row_keys) > _PIVOT_ROWS
-        col_keys, row_keys = col_keys[:_PIVOT_COLS], row_keys[:_PIVOT_ROWS]
+        all_rows, all_cols = list(row_seen), list(col_seen)
+        more_cols = len(all_cols) > _PIVOT_COLS
+        more_rows = len(all_rows) > _PIVOT_ROWS
+        col_keys, row_keys = all_cols[:_PIVOT_COLS], all_rows[:_PIVOT_ROWS]
         fn = spec.total_function if spec.totals else None
         combine = fn is not None
 
@@ -824,11 +823,16 @@ class SvgRenderer:
         col_labels = [self._cat(spec, c) for c in col_keys] if ce else [ye.label or ye.field]
         row_labels = [self._cat(spec, r) for r in row_keys]
         grid = [[cells.get((rk, ck)) for ck in col_keys] for rk in row_keys]
-        row_totals = [total(line) for line in grid] if combine and ce else []
-        col_totals = (
-            [total([line[i] for line in grid]) for i in range(len(col_keys))] if combine else []
+        # Totals cover every cell, including rows and columns beyond the caps.
+        row_totals = (
+            [total([cells.get((rk, ck)) for ck in all_cols]) for rk in row_keys]
+            if combine and ce
+            else []
         )
-        grand = total([v for line in grid for v in line]) if combine else None
+        col_totals = (
+            [total([cells.get((rk, ck)) for rk in all_rows]) for ck in col_keys] if combine else []
+        )
+        grand = total(list(cells.values())) if combine else None
 
         # Geometry: a label column, then value columns, then (with columns) a total column.
         corner = f"{xe.label or xe.field}" + (f" / {ce.label or ce.field}" if ce else "")
@@ -866,19 +870,19 @@ class SvgRenderer:
                 f' fill="{theme["text"]}">{_xml(_truncate(head, int(cell_w / 7)))}</text>'
             )
 
-        def value_cell(x: float, y: float, v: float | None, strong: bool, pick: object) -> str:
+        def value_cell(x: float, y: float, v: float | None, strong: bool) -> str:
             shade = ""
             if spec.heatmap and v is not None and not strong and hi > lo:
                 alpha = 0.08 + 0.5 * (v - lo) / (hi - lo)
                 shade = (
                     f'<rect x="{_f(x)}" y="{_f(y)}" width="{_f(cell_w)}" height="{_f(rh)}"'
-                    f' fill="{_HEAT}" fill-opacity="{alpha:.2f}"{_pick(pick)}/>'
+                    f' fill="{_HEAT}" fill-opacity="{alpha:.2f}" pointer-events="none"/>'
                 )
             text = self._fmt(spec, v) if v is not None else "–"
             weight = ' font-weight="bold"' if strong else ""
             return shade + (
                 f'<text x="{_f(x + cell_w - 8)}" y="{_f(y + rh / 2)}" text-anchor="end"'
-                f' dominant-baseline="central" font-size="11"{weight}'
+                f' dominant-baseline="central" font-size="11"{weight} pointer-events="none"'
                 f' fill="{theme["text"] if v is not None else theme["muted"]}">{_xml(text)}</text>'
             )
 
@@ -891,14 +895,13 @@ class SvgRenderer:
             )
             out += (
                 f'<text x="18" y="{_f(y + rh / 2)}" dominant-baseline="central" font-size="11"'
-                f' fill="{theme["text"]}">{_xml(_truncate(label, int(label_w / 6.5)))}</text>'
+                f' pointer-events="none" fill="{theme["text"]}">'
+                f"{_xml(_truncate(label, int(label_w / 6.5)))}</text>"
             )
             for ci, v in enumerate(grid[ri]):
-                out += value_cell(10 + label_w + ci * cell_w, y, v, False, rk)
+                out += value_cell(10 + label_w + ci * cell_w, y, v, False)
             if row_totals:
-                out += value_cell(
-                    10 + label_w + len(col_keys) * cell_w, y, row_totals[ri], True, None
-                )
+                out += value_cell(10 + label_w + len(col_keys) * cell_w, y, row_totals[ri], True)
         if col_totals:
             y = top + hh + len(row_keys) * rh
             out += (
@@ -908,9 +911,9 @@ class SvgRenderer:
                 f' font-weight="bold" fill="{theme["text"]}">Total</text>'
             )
             for ci, v in enumerate(col_totals):
-                out += value_cell(10 + label_w + ci * cell_w, y, v, True, None)
+                out += value_cell(10 + label_w + ci * cell_w, y, v, True)
             if row_totals:
-                out += value_cell(10 + label_w + len(col_keys) * cell_w, y, grand, True, None)
+                out += value_cell(10 + label_w + len(col_keys) * cell_w, y, grand, True)
         if more_cols or more_rows:
             note = "Showing the first " + " and ".join(
                 part
@@ -920,6 +923,8 @@ class SvgRenderer:
                 )
                 if more
             )
+            if combine:
+                note += "; totals include all of them"
             out += (
                 f'<text x="10" y="{_f(top + hh + n_rows * rh + 14)}" font-size="10"'
                 f' fill="{theme["muted"]}">{_xml(note)}</text>'
