@@ -205,6 +205,8 @@ class ArtifactService:
     def validate_chart(
         self, s: Session, actor: Actor | None, ds: Dataset, query: QuerySpec, view: ViewSpec
     ) -> QueryOutcome:
+        if view.mark == MarkType.PIVOT and (pivot_errors := _pivot_query_errors(query, view)):
+            raise BadRequest("; ".join(pivot_errors))
         outcome = self.queries.run(s, actor, ds, query)
         errors = validate_view(view, list(outcome.result.columns))
         if errors:
@@ -735,6 +737,26 @@ def _category_grain(query: QuerySpec, view: ViewSpec) -> str | None:
         return None
     grain = query.time_grain.get(enc.field)
     return grain.value if grain is not None else None
+
+
+def _pivot_query_errors(query: QuerySpec, view: ViewSpec) -> list[str]:
+    """A pivot needs one row per cell: grouped by its rows and columns fields and nothing else.
+
+    Ungrouped rows, or a grouping by a further field, give several rows for one cell, and the
+    table would show only one of them.
+    """
+    if query.columns or not query.measures:
+        return ["A pivot table needs grouped data: group by its rows and columns with one value"]
+    axes = (EncodingChannel.X, EncodingChannel.COLOR)
+    fields = {e.field for e in view.encodings if e.channel in axes}
+    extra = [d for d in query.dimensions if d not in fields]
+    if extra:
+        return [
+            "A pivot table groups by its rows and columns only; remove "
+            + ", ".join(extra)
+            + " from the grouping or use it as a filter"
+        ]
+    return []
 
 
 def _pivot_totals(query: QuerySpec) -> str | None:

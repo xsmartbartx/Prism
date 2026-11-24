@@ -134,3 +134,14 @@ def test_pivot_chart_through_the_api(client: TestClient) -> None:
 
     assert ">Total</text>" in pivot("sum")
     assert ">Total</text>" not in pivot("avg")  # an average of averages would be wrong
+
+    # A grouping by a further field would put several rows in one cell: refused.
+    r = client.post("/api/v1/charts", headers=H, json={
+        "dataset_id": ds, "name": "Too fine",
+        "query": {"dimensions": ["Region", "Channel", "Product"],
+                  "measures": [{"column": "Revenue", "function": "sum"}]},
+        "view": {"mark": "pivot", "encodings": [{"channel": "x", "field": "Region"},
+                                               {"channel": "color", "field": "Channel"},
+                                               {"channel": "y", "field": "Revenue"}]},
+    })
+    assert r.status_code == 400 and "remove Product" in r.text, r.text

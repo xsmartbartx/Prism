@@ -10,7 +10,7 @@ from data.query import QuerySpec
 from data.query.spec import AggFunction, AggregationSpec
 from presentation.render.svg_renderer import SvgRenderer
 from presentation.spec.view_spec import Encoding, EncodingChannel, MarkType, ViewSpec, validate_view
-from server.services.artifacts import _pivot_totals
+from server.services.artifacts import _pivot_query_errors, _pivot_totals
 
 X = Encoding(channel=EncodingChannel.X, field="Region")
 C = Encoding(channel=EncodingChannel.COLOR, field="Channel")
@@ -117,3 +117,14 @@ def test_view_checks() -> None:
 def test_totals_follow_the_aggregation(function: AggFunction, expected: str | None) -> None:
     q = QuerySpec(dimensions=["Region"], measures=[AggregationSpec(column="Revenue", function=function)])
     assert _pivot_totals(q) == expected
+
+
+def test_pivot_queries_must_have_one_row_per_cell() -> None:
+    view = ViewSpec(mark=MarkType.PIVOT, encodings=[X, C, Y])
+    rev = [AggregationSpec(column="Revenue", function=AggFunction.SUM)]
+    ok = QuerySpec(dimensions=["Region", "Channel"], measures=rev)
+    assert _pivot_query_errors(ok, view) == []
+    extra = QuerySpec(dimensions=["Region", "Channel", "Product"], measures=rev)
+    assert "remove Product" in _pivot_query_errors(extra, view)[0]
+    raw = QuerySpec(columns=["Region", "Channel", "Revenue"])
+    assert "grouped data" in _pivot_query_errors(raw, view)[0]
