@@ -59,6 +59,9 @@ _THEMES = {
 }
 
 _FONT = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
+_HEAT = "#2f81f7"  # pivot heat-map shading (opacity carries the value)
+_PIVOT_ROWS = 200
+_PIVOT_COLS = 20
 
 
 def _xml(s: object) -> str:
@@ -125,6 +128,8 @@ class SvgRenderer:
         m = spec.mark
         if m == MarkType.TABLE:
             return self._table(spec, rows, theme)
+        if m == MarkType.PIVOT:
+            return self._pivot(spec, rows, theme)
         if m == MarkType.KPI:
             return self._kpi(spec, rows, theme)
         if m == MarkType.PIE:
@@ -777,6 +782,153 @@ class SvgRenderer:
                     f"{_xml(_truncate(val, int(widths[ci] / 6.5)))}</text>"
                 )
                 x += widths[ci]
+        return out + "</svg>"
+
+    # ------------------------------------------------------------------
+    # Pivot table
+    # ------------------------------------------------------------------
+
+    def _pivot(self, spec: ViewSpec, rows: list[dict[str, Any]], theme: dict[str, str]) -> str:
+        """Rows (x) × columns (color) → one value (y), with totals and optional shading."""
+        xe = spec.encoding_for(EncodingChannel.X)
+        ye = spec.encoding_for(EncodingChannel.Y)
+        ce = spec.encoding_for(EncodingChannel.COLOR)
+        if not xe or not ye:
+            return self._empty(spec, theme)
+        row_seen: dict[Any, None] = {}  # insertion-ordered sets
+        col_seen: dict[Any, None] = {}
+        cells: dict[tuple[Any, Any], float | None] = {}
+        for r in rows:
+            rk, ck = r.get(xe.field), (r.get(ce.field) if ce else None)
+            row_seen.setdefault(rk, None)
+            col_seen.setdefault(ck, None)
+            cells[(rk, ck)] = _num_or_none(r.get(ye.field))
+        all_rows, all_cols = list(row_seen), list(col_seen)
+        more_cols = len(all_cols) > _PIVOT_COLS
+        more_rows = len(all_rows) > _PIVOT_ROWS
+        col_keys, row_keys = all_cols[:_PIVOT_COLS], all_rows[:_PIVOT_ROWS]
+        fn = spec.total_function if spec.totals else None
+        combine = fn is not None
+
+        def total(values: list[float | None]) -> float | None:
+            present = [v for v in values if v is not None]
+            if not combine or not present:
+                return None
+            if fn == "min":
+                return min(present)
+            if fn == "max":
+                return max(present)
+            return float(sum(present))
+
+        col_labels = [self._cat(spec, c) for c in col_keys] if ce else [ye.label or ye.field]
+        row_labels = [self._cat(spec, r) for r in row_keys]
+        grid = [[cells.get((rk, ck)) for ck in col_keys] for rk in row_keys]
+        # Totals cover every cell, including rows and columns beyond the caps.
+        row_totals = (
+            [total([cells.get((rk, ck)) for ck in all_cols]) for rk in row_keys]
+            if combine and ce
+            else []
+        )
+        col_totals = (
+            [total([cells.get((rk, ck)) for rk in all_rows]) for ck in col_keys] if combine else []
+        )
+        grand = total(list(cells.values())) if combine else None
+
+        # Geometry: a label column, then value columns, then (with columns) a total column.
+        corner = f"{xe.label or xe.field}" + (f" / {ce.label or ce.field}" if ce else "")
+        label_w = min(max([len(corner), *map(len, row_labels)]) * 7.0 + 24, 240)
+        heads = [*col_labels, *(["Total"] if row_totals else [])]
+        numbers = [self._fmt(spec, v) for line in grid for v in line if v is not None]
+        numbers += [self._fmt(spec, v) for v in [*row_totals, *col_totals, grand] if v is not None]
+        cell_w = min(
+            max([max((len(h) for h in heads), default=4), *map(len, numbers), 4]) * 7.0 + 20, 160
+        )
+        rh, hh = 24.0, 30.0
+        top = 40.0 if spec.title else 10.0
+        width = label_w + cell_w * len(heads)
+        n_rows = len(row_keys) + (1 if col_totals else 0)
+        w = max(float(spec.width), width + 20)
+        h = max(float(spec.height), top + hh + n_rows * rh + (22 if more_cols or more_rows else 10))
+        values = [v for line in grid for v in line if v is not None]
+        lo, hi = (min(values), max(values)) if values else (0.0, 0.0)
+
+        out = self._open(spec, w, h, theme, xe.field)
+        out += (
+            f'<rect x="10" y="{_f(top)}" width="{_f(width)}" height="{_f(hh)}"'
+            f' fill="{theme["stripe"]}" stroke="{theme["axis"]}"/>'
+        )
+        out += (
+            f'<text x="18" y="{_f(top + hh / 2)}" dominant-baseline="central" font-size="11"'
+            f' font-weight="bold" fill="{theme["muted"]}">'
+            f"{_xml(_truncate(corner, int(label_w / 6.5)))}</text>"
+        )
+        for i, head in enumerate(heads):
+            x = 10 + label_w + i * cell_w
+            out += (
+                f'<text x="{_f(x + cell_w - 8)}" y="{_f(top + hh / 2)}" text-anchor="end"'
+                f' dominant-baseline="central" font-size="12" font-weight="bold"'
+                f' fill="{theme["text"]}">{_xml(_truncate(head, int(cell_w / 7)))}</text>'
+            )
+
+        def value_cell(x: float, y: float, v: float | None, strong: bool) -> str:
+            shade = ""
+            if spec.heatmap and v is not None and not strong and hi > lo:
+                alpha = 0.08 + 0.5 * (v - lo) / (hi - lo)
+                shade = (
+                    f'<rect x="{_f(x)}" y="{_f(y)}" width="{_f(cell_w)}" height="{_f(rh)}"'
+                    f' fill="{_HEAT}" fill-opacity="{alpha:.2f}" pointer-events="none"/>'
+                )
+            text = self._fmt(spec, v) if v is not None else "–"
+            weight = ' font-weight="bold"' if strong else ""
+            return shade + (
+                f'<text x="{_f(x + cell_w - 8)}" y="{_f(y + rh / 2)}" text-anchor="end"'
+                f' dominant-baseline="central" font-size="11"{weight} pointer-events="none"'
+                f' fill="{theme["text"] if v is not None else theme["muted"]}">{_xml(text)}</text>'
+            )
+
+        for ri, (rk, label) in enumerate(zip(row_keys, row_labels, strict=True)):
+            y = top + hh + ri * rh
+            bg = theme["stripe"] if ri % 2 else theme["bg"]
+            out += (
+                f'<rect x="10" y="{_f(y)}" width="{_f(width)}" height="{_f(rh)}" fill="{bg}"'
+                f' stroke="{theme["grid"]}"{_pick(rk)}><title>{_xml(label)}</title></rect>'
+            )
+            out += (
+                f'<text x="18" y="{_f(y + rh / 2)}" dominant-baseline="central" font-size="11"'
+                f' pointer-events="none" fill="{theme["text"]}">'
+                f"{_xml(_truncate(label, int(label_w / 6.5)))}</text>"
+            )
+            for ci, v in enumerate(grid[ri]):
+                out += value_cell(10 + label_w + ci * cell_w, y, v, False)
+            if row_totals:
+                out += value_cell(10 + label_w + len(col_keys) * cell_w, y, row_totals[ri], True)
+        if col_totals:
+            y = top + hh + len(row_keys) * rh
+            out += (
+                f'<rect x="10" y="{_f(y)}" width="{_f(width)}" height="{_f(rh)}"'
+                f' fill="{theme["stripe"]}" stroke="{theme["axis"]}"/>'
+                f'<text x="18" y="{_f(y + rh / 2)}" dominant-baseline="central" font-size="11"'
+                f' font-weight="bold" fill="{theme["text"]}">Total</text>'
+            )
+            for ci, v in enumerate(col_totals):
+                out += value_cell(10 + label_w + ci * cell_w, y, v, True)
+            if row_totals:
+                out += value_cell(10 + label_w + len(col_keys) * cell_w, y, grand, True)
+        if more_cols or more_rows:
+            note = "Showing the first " + " and ".join(
+                part
+                for part, more in (
+                    (f"{_PIVOT_ROWS} rows", more_rows),
+                    (f"{_PIVOT_COLS} columns", more_cols),
+                )
+                if more
+            )
+            if combine:
+                note += "; totals include all of them"
+            out += (
+                f'<text x="10" y="{_f(top + hh + n_rows * rh + 14)}" font-size="10"'
+                f' fill="{theme["muted"]}">{_xml(note)}</text>'
+            )
         return out + "</svg>"
 
 

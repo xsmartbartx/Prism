@@ -108,3 +108,40 @@ def test_dataset_and_chart_exports_take_any_name(client: TestClient) -> None:
     client.put(f"/api/v1/charts/{a}", headers=h, json={**chart, "name": "Ventes Été"})
     r = client.get(f"/api/v1/charts/{a}/export?format=xlsx")
     assert r.status_code == 200 and "Ventes%20%C3%89t%C3%A9.xlsx" in r.headers["content-disposition"]
+
+
+def test_pivot_chart_through_the_api(client: TestClient) -> None:
+    from tests.server.test_api import H, setup_admin
+
+    setup_admin(client)
+    ds = client.post("/api/v1/datasets/sample", headers=H).json()["id"]  # has Region × Channel
+
+    def pivot(function: str) -> str:
+        body = {
+            "dataset_id": ds, "name": f"Pivot {function}",
+            "query": {"dimensions": ["Region", "Channel"],
+                      "measures": [{"column": "Revenue", "function": function}], "limit": 5000},
+            "view": {"mark": "pivot", "heatmap": True,
+                     "encodings": [{"channel": "x", "field": "Region"},
+                                   {"channel": "color", "field": "Channel"},
+                                   {"channel": "y", "field": "Revenue"}]},
+        }
+        r = client.post("/api/v1/charts", json=body, headers=H)
+        assert r.status_code == 201, r.text
+        svg = client.get(f"/api/v1/charts/{r.json()['id']}/render").text
+        assert "<svg" in svg and "fill-opacity" in svg
+        return svg
+
+    assert ">Total</text>" in pivot("sum")
+    assert ">Total</text>" not in pivot("avg")  # an average of averages would be wrong
+
+    # A grouping by a further field would put several rows in one cell: refused.
+    r = client.post("/api/v1/charts", headers=H, json={
+        "dataset_id": ds, "name": "Too fine",
+        "query": {"dimensions": ["Region", "Channel", "Product"],
+                  "measures": [{"column": "Revenue", "function": "sum"}]},
+        "view": {"mark": "pivot", "encodings": [{"channel": "x", "field": "Region"},
+                                               {"channel": "color", "field": "Channel"},
+                                               {"channel": "y", "field": "Revenue"}]},
+    })
+    assert r.status_code == 400 and "remove Product" in r.text, r.text

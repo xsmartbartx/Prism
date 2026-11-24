@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { AreaChart, BarChart3, Download, Hash, LineChart, PieChart, Plus, Save, ScatterChart, Share2, Sparkles, Table2, Trash2, Wand2, X } from "lucide-react";
+import { AreaChart, BarChart3, Download, Grid3x3, Hash, LineChart, PieChart, Plus, Save, ScatterChart, Share2, Sparkles, Table2, Trash2, Wand2, X } from "lucide-react";
 import { can, del, download, get, post, put, type Aggregation, type Chart, type ColumnContract, type Dataset, type Filter, type QueryResult, type QuerySpec, type ViewSpec, datasetFields } from "../api";
 import { effectiveTheme, useApp, useLoad } from "../app-state";
 import ShareDialog from "../components/ShareDialog";
@@ -27,6 +27,8 @@ interface State {
   orientation: "vertical" | "horizontal";
   stacked: boolean;
   showValues: boolean;
+  totals: boolean;
+  heatmap: boolean;
 }
 
 const MARKS: { mark: Mark; label: string; icon: JSX.Element }[] = [
@@ -37,11 +39,12 @@ const MARKS: { mark: Mark; label: string; icon: JSX.Element }[] = [
   { mark: "scatter", label: "Scatter", icon: <ScatterChart size={18} /> },
   { mark: "kpi", label: "KPI", icon: <Hash size={18} /> },
   { mark: "table", label: "Table", icon: <Table2 size={18} /> },
+  { mark: "pivot", label: "Pivot", icon: <Grid3x3 size={18} /> },
 ];
 const FNS: Fn[] = ["sum", "avg", "count", "count_distinct", "min", "max", "median"];
 const OPS: Record<string, string> = { eq: "=", ne: "≠", gt: ">", gte: "≥", lt: "<", lte: "≤", in: "is one of", not_in: "is not one of", contains: "contains", starts_with: "starts with", is_null: "is empty", not_null: "is not empty" };
 
-const EMPTY: State = { mark: "bar", x: "", ys: [], color: "", grain: "", filters: [], sortBy: "", sortDir: "desc", limit: 50, title: "", numberFormat: "auto", currency: "USD", orientation: "vertical", stacked: false, showValues: false };
+const EMPTY: State = { mark: "bar", x: "", ys: [], color: "", grain: "", filters: [], sortBy: "", sortDir: "desc", limit: 50, title: "", numberFormat: "auto", currency: "USD", orientation: "vertical", stacked: false, showValues: false, totals: true, heatmap: false };
 
 function outName(ys: State["ys"], i: number): string {
   const y = ys[i];
@@ -60,8 +63,9 @@ export function toSpecs(s: State): { query: QuerySpec; view: ViewSpec } {
     if (Array.isArray(f.value)) return f.value.length > 0;
     return f.value !== "" && f.value !== null && f.value !== undefined && !(typeof f.value === "number" && Number.isNaN(f.value));
   });
-  const display = { title: s.title || null, number_format: s.numberFormat, currency: s.currency, orientation: s.orientation, stacked: s.stacked, show_values: s.showValues };
-  const sort = s.sortBy ? [{ column: s.sortBy, direction: s.sortDir }] : [];
+  const display = { title: s.title || null, number_format: s.numberFormat, currency: s.currency, orientation: s.orientation, stacked: s.stacked, show_values: s.showValues, totals: s.totals, heatmap: s.heatmap };
+  // A sort on a column the chart no longer outputs (e.g. after changing the x field) is dropped.
+  const sortOn = (outs: string[]) => (s.sortBy && outs.includes(s.sortBy) ? [{ column: s.sortBy, direction: s.sortDir }] : []);
   if (s.mark === "kpi") {
     return { query: { measures: measures.slice(0, 1), filters }, view: { mark: "kpi", encodings: yNames.slice(0, 1).map((f) => ({ channel: "y", field: f })), ...display, width: 360, height: 180 } };
   }
@@ -75,7 +79,7 @@ export function toSpecs(s: State): { query: QuerySpec; view: ViewSpec } {
   }
   if (s.mark === "table" && !s.ys.length) {
     const cols = [s.x, s.color].filter(Boolean);
-    return { query: { columns: cols, filters, sort, limit: s.limit }, view: { mark: "table", encodings: cols.map((c) => ({ channel: "x", field: c })), ...display } };
+    return { query: { columns: cols, filters, sort: sortOn(cols), limit: s.limit }, view: { mark: "table", encodings: cols.map((c) => ({ channel: "x", field: c })), ...display } };
   }
   const dims = [s.x, s.mark === "pie" ? "" : s.color].filter(Boolean);
   const ys = s.color && s.mark !== "pie" ? yNames.slice(0, 1) : s.mark === "pie" ? yNames.slice(0, 1) : yNames;
@@ -84,7 +88,7 @@ export function toSpecs(s: State): { query: QuerySpec; view: ViewSpec } {
   ys.forEach((f) => encodings.push({ channel: "y", field: f }));
   if (s.color && s.mark !== "pie") encodings.push({ channel: "color", field: s.color });
   return {
-    query: { dimensions: dims, measures: s.color && s.mark !== "pie" ? measures.slice(0, 1) : s.mark === "pie" ? measures.slice(0, 1) : measures, filters, sort, limit: s.limit, time_grain: s.grain && s.x ? { [s.x]: s.grain } : {} },
+    query: { dimensions: dims, measures: s.color && s.mark !== "pie" ? measures.slice(0, 1) : s.mark === "pie" ? measures.slice(0, 1) : measures, filters, sort: sortOn([...dims, ...ys]), limit: s.limit, time_grain: s.grain && s.x ? { [s.x]: s.grain } : {} },
     view: { mark: s.mark, encodings, ...display, time_grain: s.grain || null },
   };
 }
@@ -113,6 +117,8 @@ export function fromSpecs(q: QuerySpec, v: ViewSpec): State {
     orientation: v.orientation ?? "vertical",
     stacked: !!v.stacked,
     showValues: !!v.show_values,
+    totals: v.totals ?? true,
+    heatmap: !!v.heatmap,
   };
 }
 
@@ -277,7 +283,11 @@ export default function ChartBuilder() {
             <h3>Chart type</h3>
             <div className="mark-grid">
               {MARKS.map((m) => (
-                <button key={m.mark} className={`mark-btn ${state.mark === m.mark ? "active" : ""}`} onClick={() => set({ mark: m.mark, ys: m.mark === "kpi" && !state.ys.length ? [{ column: numeric[0]?.name ?? "*", fn: numeric[0] ? "sum" : "count" }] : state.ys })} disabled={!editable} aria-pressed={state.mark === m.mark}>
+                <button key={m.mark} className={`mark-btn ${state.mark === m.mark ? "active" : ""}`} onClick={() => set({
+                  mark: m.mark,
+                  ys: (m.mark === "kpi" || m.mark === "pivot") && !state.ys.length ? [{ column: numeric[0]?.name ?? "*", fn: numeric[0] ? "sum" : "count" }] : m.mark === "pivot" ? state.ys.slice(0, 1) : state.ys,
+                  limit: m.mark === "pivot" ? Math.max(state.limit, 5000) : state.limit,
+                })} disabled={!editable} aria-pressed={state.mark === m.mark}>
                   {m.icon}{m.label}
                 </button>
               ))}
@@ -289,7 +299,7 @@ export default function ChartBuilder() {
             <h3>Data</h3>
             {state.mark !== "kpi" && (
               <label className="field">
-                {state.mark === "scatter" ? "X axis (number)" : state.mark === "pie" ? "Slices" : state.mark === "table" ? "Group by" : "X axis"}
+                {state.mark === "scatter" ? "X axis (number)" : state.mark === "pie" ? "Slices" : state.mark === "table" ? "Group by" : state.mark === "pivot" ? "Rows" : "X axis"}
                 {fieldSelect({ value: state.x, onChange: (v) => set({ x: v, grain: cols.find((c) => c.name === v)?.type === "date" ? state.grain || "month" : "" }), only: state.mark === "scatter" ? numeric : undefined, allowEmpty: state.mark === "table" ? "—" : undefined })}
               </label>
             )}
@@ -333,9 +343,9 @@ export default function ChartBuilder() {
                 )}
               </div>
             </div>
-            {["bar", "line", "area", "scatter", "table"].includes(state.mark) && (
+            {["bar", "line", "area", "scatter", "table", "pivot"].includes(state.mark) && (
               <label className="field">
-                {state.mark === "table" ? "Then by" : "Split by (colour)"}
+                {state.mark === "table" ? "Then by" : state.mark === "pivot" ? "Columns" : "Split by (colour)"}
                 {fieldSelect({ value: state.color, onChange: (v) => set({ color: v }), allowEmpty: "None", only: cols.filter((c) => c.type !== "float") })}
               </label>
             )}
@@ -398,6 +408,14 @@ export default function ChartBuilder() {
             )}
             {["bar", "line"].includes(state.mark) && (
               <label className="check"><input type="checkbox" checked={state.showValues} onChange={(e) => set({ showValues: e.target.checked })} disabled={!editable} /> Show value labels</label>
+            )}
+            {state.mark === "pivot" && (
+              <>
+                <label className="check" title="Shown for sums, counts, minimums and maximums; an average of averages would be wrong, so other values get no totals">
+                  <input type="checkbox" checked={state.totals} onChange={(e) => set({ totals: e.target.checked })} disabled={!editable} /> Totals
+                </label>
+                <label className="check"><input type="checkbox" checked={state.heatmap} onChange={(e) => set({ heatmap: e.target.checked })} disabled={!editable} /> Heat map (shade cells by value)</label>
+              </>
             )}
           </div>
         </div>

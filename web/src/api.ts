@@ -157,7 +157,8 @@ export interface Filter { column: string; operator: string; value: unknown }
 export interface QuerySpec { dimensions?: string[]; measures?: Aggregation[]; filters?: Filter[]; sort?: { column: string; direction: "asc" | "desc" }[]; limit?: number | null; columns?: string[]; time_grain?: Record<string, string> }
 export interface Encoding { channel: "x" | "y" | "color" | "size"; field: string; label?: string | null }
 export interface ViewSpec {
-  mark: "bar" | "line" | "area" | "scatter" | "pie" | "kpi" | "table"; encodings: Encoding[]; title?: string | null;
+  mark: "bar" | "line" | "area" | "scatter" | "pie" | "kpi" | "table" | "pivot"; encodings: Encoding[]; title?: string | null;
+  totals?: boolean; heatmap?: boolean;
   orientation?: "vertical" | "horizontal"; stacked?: boolean; show_values?: boolean; show_legend?: boolean;
   number_format?: string; currency?: string; time_grain?: string | null; width?: number; height?: number; theme?: string; locale?: string;
 }

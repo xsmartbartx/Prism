@@ -135,6 +135,14 @@ curl -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
   -d '{"fields": ["Order Date", "Revenue"]}' $PRISM/api/v1/datasets/<dataset_id>/recommend
 ```
 
+A pivot table is a chart with `"mark": "pivot"`: the `x` encoding is the rows, an optional `color` encoding the columns and one `y` encoding the value; the query groups by both fields with that one measure. `"totals"` (default `true`) adds row, column and grand totals when the measure's function allows them (`sum`, `count`, `min`, `max`; never for `avg`, `median`, `count_distinct` or aggregate fields), and `"heatmap": true` shades cells by value. The query must group by those two fields only, so each cell is one row; other groupings, or ungrouped `columns`, answer 400. Give the query a `limit` that covers every cell (the builder uses 5000).
+
+```json
+{"query": {"dimensions": ["Region", "Channel"], "measures": [{"column": "Revenue", "function": "sum"}], "limit": 5000},
+ "view": {"mark": "pivot", "heatmap": true, "encodings": [{"channel": "x", "field": "Region"},
+          {"channel": "color", "field": "Channel"}, {"channel": "y", "field": "Revenue"}]}}
+```
+
 ## Other endpoints
 
 | Area | Endpoints |

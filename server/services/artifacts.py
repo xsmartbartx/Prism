@@ -205,6 +205,8 @@ class ArtifactService:
     def validate_chart(
         self, s: Session, actor: Actor | None, ds: Dataset, query: QuerySpec, view: ViewSpec
     ) -> QueryOutcome:
+        if view.mark == MarkType.PIVOT and (pivot_errors := _pivot_query_errors(query, view)):
+            raise BadRequest("; ".join(pivot_errors))
         outcome = self.queries.run(s, actor, ds, query)
         errors = validate_view(view, list(outcome.result.columns))
         if errors:
@@ -223,6 +225,8 @@ class ArtifactService:
     ) -> RenderedChart:
         outcome = self.validate_chart(s, actor, ds, query, view)
         update = dict(overrides or {})
+        if view.mark == MarkType.PIVOT:
+            update["total_function"] = _pivot_totals(query) if view.totals else None
         grain = _category_grain(query, view)
         if grain and not view.time_grain:
             # The query buckets the category axis by time but the view does not say so (charts
@@ -733,3 +737,42 @@ def _category_grain(query: QuerySpec, view: ViewSpec) -> str | None:
         return None
     grain = query.time_grain.get(enc.field)
     return grain.value if grain is not None else None
+
+
+def _pivot_query_errors(query: QuerySpec, view: ViewSpec) -> list[str]:
+    """A pivot needs one row per cell: grouped by its rows and columns fields and nothing else.
+
+    Ungrouped rows, or a grouping by a further field, give several rows for one cell, and the
+    table would show only one of them.
+    """
+    if query.columns or not query.measures:
+        return ["A pivot table needs grouped data: group by its rows and columns with one value"]
+    axes = (EncodingChannel.X, EncodingChannel.COLOR)
+    fields = {e.field for e in view.encodings if e.channel in axes}
+    extra = [d for d in query.dimensions if d not in fields]
+    if extra:
+        return [
+            "A pivot table groups by its rows and columns only; remove "
+            + ", ".join(extra)
+            + " from the grouping or use it as a filter"
+        ]
+    return []
+
+
+def _pivot_totals(query: QuerySpec) -> str | None:
+    """How a pivot's cells combine into correct totals, if they do.
+
+    Sums and counts add up; a minimum or maximum of cells is the group's; an average, a
+    median, a distinct count or a calculated measure of cells is not the group's, so no
+    totals are shown rather than wrong ones.
+    """
+    if len(query.measures) != 1:
+        return None
+    fn = query.measures[0].function
+    if fn in (AggFunction.SUM, AggFunction.COUNT):
+        return "sum"
+    if fn == AggFunction.MIN:
+        return "min"
+    if fn == AggFunction.MAX:
+        return "max"
+    return None
