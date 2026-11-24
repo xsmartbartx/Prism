@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.9.0 — 2026-11-24
 
 - Pivot tables: a **Pivot** chart type lays one value out as a grid, with a field down the rows and, optionally, another across the columns (for example revenue by region × channel). Rows and columns get totals when they add up correctly (sums, counts, minimums and maximums) and none for averages, medians or distinct counts, where a total would mislead; **Totals** turns them off. **Heat map** shades each cell by its value. Clicking a row on a dashboard filters the other charts to it. Up to 200 rows and 20 columns are shown, with a note when there are more.
 - Chart builder: a sort on a field the chart no longer shows (for example after changing the x axis) is dropped instead of failing the preview.
