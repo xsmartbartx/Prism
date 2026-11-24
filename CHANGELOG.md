@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.8.0 — 2026-11-23
 
 - Dashboard export: **Print** opens a paper-ready view of the dashboard (name, filters in words, generation time, every chart in light colours) and the browser's print dialog, for printing or saving as PDF; **Excel** downloads a workbook with a sheet per chart, filters and click selections applied, and an *About* sheet summarising the dashboard, time, exporter, filters and any chart they could not apply to. Sheet names are made Excel-safe and unique; formula injection is neutralised; exports are audited.
 
