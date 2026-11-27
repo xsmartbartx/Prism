@@ -233,7 +233,10 @@ class ArtifactService:
             # "Today" for leaving out the period still in progress; the renderer has no clock.
             update["as_of"] = utcnow().date().isoformat() if view.complete_periods else None
         grain = _category_grain(query, view)
-        if grain and not view.time_grain:
+        if grain and view.mark == MarkType.KPI and view.time_grain != grain:
+            # A KPI over time reads one row per period: the query's bucket is the period.
+            update["time_grain"] = grain
+        elif grain and not view.time_grain:
             # The query buckets the category axis by time but the view does not say so (charts
             # saved through the API): label the buckets, and let a click select the whole bucket.
             update["time_grain"] = grain

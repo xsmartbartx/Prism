@@ -68,6 +68,7 @@ _FONT = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif"
 _HEAT = "#2f81f7"  # pivot heat-map shading (opacity carries the value)
 _PIVOT_ROWS = 200
 _PIVOT_COLS = 20
+_KPI_PERIODS = 1000  # periods a KPI trend line spans at most
 
 
 def _xml(s: object) -> str:
@@ -765,11 +766,12 @@ class SvgRenderer:
         name = (ye.label or None) or spec.title or ye.field
         head = f"{name} · {period(latest)}"
         delta, delta_fill, said = "", theme["muted"], ""
-        if spec.compare:
+        if spec.compare and value is not None:  # without a latest value, "–" says it all
             ref = _shift_period(latest, grain, spec.compare)
             prev = points.get(ref)
-            if ref not in points or prev is None or value is None:
+            if prev is None:
                 delta = f"No data for {period(ref)} to compare with"
+                said = f"; there is no data for {period(ref)} to compare with"
             else:
                 diff = value - prev
                 if diff == 0:
@@ -816,11 +818,20 @@ class SvgRenderer:
                 f"{_xml(_truncate(delta, int((w - 24) / 6.8)))}</text>"
             )
         top, bottom = (y_delta if delta else y_value + size * 0.5) + 12, h - 10
-        known = [(i, v) for i, d in enumerate(keys) if (v := points[d]) is not None]
+        # Every period from the first to the latest, so that one without a row keeps its place
+        # on the time axis and breaks the line, like one whose value is empty.
+        timeline = [keys[0]]
+        while timeline[-1] < latest and len(timeline) < _KPI_PERIODS:
+            timeline.append(_next_period(timeline[-1], grain))
+        if timeline[-1] != latest:  # too many periods: keep the most recent ones
+            timeline = [latest]
+            while len(timeline) < _KPI_PERIODS:
+                timeline.insert(0, _shift_period(timeline[0], grain, "previous"))
+        known = [(i, v) for i, d in enumerate(timeline) if (v := points.get(d)) is not None]
         if spec.sparkline and len(known) >= 2 and bottom - top >= 24:
             lo, hi = min(v for _, v in known), max(v for _, v in known)
             span = (hi - lo) or 1.0
-            step = (w - 32) / (len(keys) - 1)
+            step = (w - 32) / (len(timeline) - 1)
 
             def xy(i: int, v: float) -> str:
                 y = bottom - (v - lo) / span * (bottom - top) if hi > lo else (top + bottom) / 2
@@ -828,8 +839,8 @@ class SvgRenderer:
 
             # A period without a value breaks the line rather than bridging it.
             runs: list[list[str]] = [[]]
-            for i, d in enumerate(keys):
-                v = points[d]
+            for i, d in enumerate(timeline):
+                v = points.get(d)
                 if v is None:
                     runs.append([])
                 else:
@@ -1087,6 +1098,19 @@ def _period_start(d: date, grain: str) -> date:
     if grain == "year":
         return d.replace(month=1, day=1)
     return d
+
+
+def _next_period(d: date, grain: str) -> date:
+    """The start of the period after the one starting on ``d``."""
+    if grain == "week":
+        return d + timedelta(weeks=1)
+    if grain == "month":
+        return _add_months(d, 1)
+    if grain == "quarter":
+        return _add_months(d, 3)
+    if grain == "year":
+        return d.replace(year=d.year + 1)
+    return d + timedelta(days=1)
 
 
 def _shift_period(d: date, grain: str, compare: str) -> date:

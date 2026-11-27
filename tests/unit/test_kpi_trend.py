@@ -75,6 +75,10 @@ def test_a_missing_period_is_said_not_bridged() -> None:
     gap = [r for r in MONTHS if r["Month"] != date(2026, 9, 1)]
     svg = kpi(gap, compare="previous")
     assert texts(svg)[2] == "No data for Sep 2026 to compare with"
+    assert "there is no data for Sep 2026 to compare with." in svg  # screen readers hear it too
+    # A latest period without a value shows "–" and blames no other period.
+    empty = [{**r, "Revenue": None} if r["Month"] == date(2026, 10, 1) else r for r in MONTHS]
+    assert texts(kpi(empty, compare="previous")) == ["Revenue · Oct 2026", "–"]
 
 
 def test_trend_line() -> None:
@@ -83,6 +87,13 @@ def test_trend_line() -> None:
     assert len(texts(svg)) == 2  # no comparison asked for: heading and value only
     holed = [{**r, "Revenue": None} if r["Month"] == date(2026, 3, 1) else r for r in MONTHS]
     assert kpi(holed).count("<polyline") == 2  # a period without a value breaks the line
+    absent = [r for r in MONTHS if r["Month"] != date(2026, 3, 1)]
+    assert kpi(absent).count("<polyline") == 2  # and so does a period without a row
+    # ...which keeps its place: the points either side are two steps apart, not one.
+    xs = [float(p.split(",")[0]) for p in re.findall(r'points="([^"]+)"', kpi(absent))[0].split()]
+    step = xs[1] - xs[0]
+    second = [float(p.split(",")[0]) for p in re.findall(r'points="([^"]+)"', kpi(absent))[1].split()]
+    assert second[0] - xs[-1] == pytest.approx(2 * step, abs=0.2)
     assert "<polyline" not in kpi(sparkline=False)
     small = ViewSpec(mark=MarkType.KPI, encodings=[X, Y], time_grain="month", height=100)
     assert "<polyline" not in SvgRenderer().render(small, MONTHS)  # no room

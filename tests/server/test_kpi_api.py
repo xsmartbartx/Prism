@@ -38,6 +38,12 @@ def test_kpi_with_a_comparison(client: TestClient) -> None:
     assert texts[0].startswith("Revenue · ") and " vs " in texts[2], texts
     assert "<polyline" in svg
 
+    # The query's monthly bucket is the period even if the view says "year".
+    r = client.post("/api/v1/charts", headers=H, json=_kpi(ds, MONTHLY, time_grain="year"))
+    assert r.status_code == 201, r.text
+    head = re.findall(r">([^<>]+)</text>", client.get(f"/api/v1/charts/{r.json()['id']}/render").text)[0]
+    assert re.fullmatch(r"Revenue · [A-Z][a-z]{2} \d{4}", head), head
+
     # Without a time bucket, or grouped by something else too, there is no one row per period.
     bad = {**MONTHLY, "time_grain": {}}
     r = client.post("/api/v1/charts", headers=H, json=_kpi(ds, bad, compare="previous"))
