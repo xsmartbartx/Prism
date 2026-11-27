@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- KPI comparisons: give a KPI card a date field (**Over time**) and a **Period** (day to year), and it shows the latest period's value with a trend line, and with **Compare with** its change against the previous period or the same period a year earlier (for example *Revenue · Oct 2026 · 182,201 · ▲ 12.4% vs Sep 2026*). Rises show green and falls red, or the other way round with **Lower is better**. The period still in progress is left out by default, so a month that has just begun is not shown as a fall. Changes of percentages are told in percentage points, a missing comparison period is said rather than skipped over, and screen readers hear the comparison in words.
+
 ## 1.9.0 — 2026-11-24
 
 - Pivot tables: a **Pivot** chart type lays one value out as a grid, with a field down the rows and, optionally, another across the columns (for example revenue by region × channel). Rows and columns get totals when they add up correctly (sums, counts, minimums and maximums) and none for averages, medians or distinct counts, where a total would mislead; **Totals** turns them off. **Heat map** shades each cell by its value. Clicking a row on a dashboard filters the other charts to it. Up to 200 rows and 20 columns are shown, with a note when there are more.

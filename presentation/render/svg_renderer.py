@@ -14,13 +14,15 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from presentation.render.format import format_category, format_number
 from presentation.spec.view_spec import (
+    Encoding,
     EncodingChannel,
     MarkType,
+    NumberFormat,
     Orientation,
     ViewSpec,
 )
@@ -47,6 +49,8 @@ _THEMES = {
         "grid": "#eeeeee",
         "axis": "#d0d7de",
         "stripe": "#f6f8fa",
+        "good": "#1a7f37",
+        "bad": "#cf222e",
     },
     "dark": {
         "bg": "#0d1117",
@@ -55,6 +59,8 @@ _THEMES = {
         "grid": "#21262d",
         "axis": "#3d444d",
         "stripe": "#161b22",
+        "good": "#3fb950",
+        "bad": "#f85149",
     },
 }
 
@@ -706,6 +712,9 @@ class SvgRenderer:
 
     def _kpi(self, spec: ViewSpec, rows: list[dict[str, Any]], theme: dict[str, str]) -> str:
         ye = spec.encoding_for(EncodingChannel.Y)
+        xe = spec.encoding_for(EncodingChannel.X)
+        if xe is not None and ye is not None:
+            return self._kpi_trend(spec, rows, theme, xe, ye)
         field = ye.field if ye else next(iter(rows[0]), None)
         if field is None:
             return self._empty(spec, theme)
@@ -724,6 +733,117 @@ class SvgRenderer:
             f' font-size="13" fill="{theme["muted"]}">{_xml(_truncate(str(label), 60))}</text>'
             "</svg>"
         )
+
+    def _kpi_trend(
+        self,
+        spec: ViewSpec,
+        rows: list[dict[str, Any]],
+        theme: dict[str, str],
+        xe: Encoding,
+        ye: Encoding,
+    ) -> str:
+        """The latest period's value, its change against an earlier period, and the trend."""
+        grain = spec.time_grain or "day"
+        points: dict[date, float | None] = {}
+        for r in rows:
+            d = _as_date(r.get(xe.field))
+            if d is not None:
+                points[_period_start(d, grain)] = _num_or_none(r.get(ye.field))
+        if spec.as_of:  # leave out the period still in progress (and any after it)
+            current = _period_start(date.fromisoformat(spec.as_of), grain)
+            points = {d: v for d, v in points.items() if d < current}
+        if not points:
+            return self._empty(spec, theme)
+        keys = sorted(points)
+        latest = keys[-1]
+        value = points[latest]
+
+        def period(d: date) -> str:
+            text = self._cat(spec, d)
+            return f"Week of {text}" if grain == "week" else text
+
+        name = (ye.label or None) or spec.title or ye.field
+        head = f"{name} · {period(latest)}"
+        delta, delta_fill, said = "", theme["muted"], ""
+        if spec.compare:
+            ref = _shift_period(latest, grain, spec.compare)
+            prev = points.get(ref)
+            if ref not in points or prev is None or value is None:
+                delta = f"No data for {period(ref)} to compare with"
+            else:
+                diff = value - prev
+                if diff == 0:
+                    change = "No change"
+                elif spec.number_format == NumberFormat.PERCENT:
+                    # A change of a percentage is told in percentage points, not a percent of it.
+                    change = f"{abs(diff) * 100:.1f} pp"
+                elif prev != 0:
+                    change = self._fmt(
+                        spec.model_copy(update={"number_format": NumberFormat.PERCENT}),
+                        abs(diff) / abs(prev),
+                    )
+                else:
+                    change = self._fmt(spec, abs(diff))
+                arrow = "" if diff == 0 else ("▲ " if diff > 0 else "▼ ")
+                delta = f"{arrow}{change} vs {period(ref)} ({self._fmt(spec, prev)})"
+                if diff != 0:
+                    good = (diff > 0) == spec.higher_is_better
+                    delta_fill = theme["good"] if good else theme["bad"]
+                    direction = "up" if diff > 0 else "down"
+                    said = f", {direction} {change} from {self._fmt(spec, prev)} in {period(ref)}"
+                else:
+                    said = f", unchanged from {period(ref)}"
+
+        w, h = float(max(spec.width, 200)), float(max(spec.height, 100))
+        text = self._fmt(spec, value) if value is not None else "–"
+        desc = spec.description or f"{name}: {text} in {period(latest)}{said}."
+        out = self._open(spec.model_copy(update={"title": None, "description": desc}), w, h, theme)
+        size = min(h * 0.3, (w - 32) / max(len(text) * 0.6, 1), 56)
+        y_head = 24.0
+        y_value = y_head + 14 + size * 0.5
+        y_delta = y_value + size * 0.5 + 16
+        out += (
+            f'<text x="{_f(w / 2)}" y="{_f(y_head)}" text-anchor="middle" font-size="13"'
+            f' fill="{theme["muted"]}">{_xml(_truncate(head, int((w - 24) / 6.5)))}</text>'
+            f'<text x="{_f(w / 2)}" y="{_f(y_value)}" text-anchor="middle"'
+            f' dominant-baseline="central" font-size="{_f(size)}" font-weight="650"'
+            f' fill="{theme["text"]}">{_xml(text)}</text>'
+        )
+        if delta:
+            out += (
+                f'<text x="{_f(w / 2)}" y="{_f(y_delta)}" text-anchor="middle" font-size="13"'
+                f' font-weight="600" fill="{delta_fill}">'
+                f"{_xml(_truncate(delta, int((w - 24) / 6.8)))}</text>"
+            )
+        top, bottom = (y_delta if delta else y_value + size * 0.5) + 12, h - 10
+        known = [(i, v) for i, d in enumerate(keys) if (v := points[d]) is not None]
+        if spec.sparkline and len(known) >= 2 and bottom - top >= 24:
+            lo, hi = min(v for _, v in known), max(v for _, v in known)
+            span = (hi - lo) or 1.0
+            step = (w - 32) / (len(keys) - 1)
+
+            def xy(i: int, v: float) -> str:
+                y = bottom - (v - lo) / span * (bottom - top) if hi > lo else (top + bottom) / 2
+                return f"{_f(16 + i * step)},{_f(y)}"
+
+            # A period without a value breaks the line rather than bridging it.
+            runs: list[list[str]] = [[]]
+            for i, d in enumerate(keys):
+                v = points[d]
+                if v is None:
+                    runs.append([])
+                else:
+                    runs[-1].append(xy(i, v))
+            for run in runs:
+                if len(run) >= 2:
+                    out += (
+                        f'<polyline points="{" ".join(run)}" fill="none" stroke="{_COLORS[0]}"'
+                        ' stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'
+                    )
+            last_i, last_v = known[-1]
+            cx, cy = xy(last_i, last_v).split(",")
+            out += f'<circle cx="{cx}" cy="{cy}" r="3" fill="{_COLORS[0]}"/>'
+        return out + "</svg>"
 
     # ------------------------------------------------------------------
     # Table
@@ -935,6 +1055,57 @@ class SvgRenderer:
 # ------------------------------------------------------------------
 # Pure functions
 # ------------------------------------------------------------------
+
+
+def _as_date(v: object) -> date | None:
+    """A date from a period value: a date, a timestamp or an ISO string; None otherwise."""
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, date):
+        return v
+    if isinstance(v, str) and len(v) >= 10:
+        try:
+            return date.fromisoformat(v[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def _add_months(d: date, months: int) -> date:
+    m = d.year * 12 + d.month - 1 + months
+    return d.replace(year=m // 12, month=m % 12 + 1, day=1)
+
+
+def _period_start(d: date, grain: str) -> date:
+    """The first day of the period containing ``d`` (weeks start on Monday, as in the queries)."""
+    if grain == "week":
+        return d - timedelta(days=d.weekday())
+    if grain == "month":
+        return d.replace(day=1)
+    if grain == "quarter":
+        return d.replace(month=(d.month - 1) // 3 * 3 + 1, day=1)
+    if grain == "year":
+        return d.replace(month=1, day=1)
+    return d
+
+
+def _shift_period(d: date, grain: str, compare: str) -> date:
+    """The start of the period a KPI compares ``d``'s period with."""
+    if compare == "year":
+        if grain == "week":
+            return d - timedelta(weeks=52)  # the same week of the year, starting on a Monday
+        if grain == "day" and d.month == 2 and d.day == 29:
+            return d.replace(year=d.year - 1, day=28)
+        return d.replace(year=d.year - 1)
+    if grain == "week":
+        return d - timedelta(weeks=1)
+    if grain == "month":
+        return _add_months(d, -1)
+    if grain == "quarter":
+        return _add_months(d, -3)
+    if grain == "year":
+        return d.replace(year=d.year - 1)
+    return d - timedelta(days=1)
 
 
 def _num_or_none(value: object) -> float | None:

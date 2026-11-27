@@ -29,6 +29,13 @@ interface State {
   showValues: boolean;
   totals: boolean;
   heatmap: boolean;
+  /** KPI over time: the date field, its period, and what the latest period is compared with. */
+  trend: string;
+  trendGrain: string;
+  compare: "" | "previous" | "year";
+  higherIsBetter: boolean;
+  sparkline: boolean;
+  completePeriods: boolean;
 }
 
 const MARKS: { mark: Mark; label: string; icon: JSX.Element }[] = [
@@ -44,7 +51,9 @@ const MARKS: { mark: Mark; label: string; icon: JSX.Element }[] = [
 const FNS: Fn[] = ["sum", "avg", "count", "count_distinct", "min", "max", "median"];
 const OPS: Record<string, string> = { eq: "=", ne: "≠", gt: ">", gte: "≥", lt: "<", lte: "≤", in: "is one of", not_in: "is not one of", contains: "contains", starts_with: "starts with", is_null: "is empty", not_null: "is not empty" };
 
-const EMPTY: State = { mark: "bar", x: "", ys: [], color: "", grain: "", filters: [], sortBy: "", sortDir: "desc", limit: 50, title: "", numberFormat: "auto", currency: "USD", orientation: "vertical", stacked: false, showValues: false, totals: true, heatmap: false };
+const EMPTY: State = { mark: "bar", x: "", ys: [], color: "", grain: "", filters: [], sortBy: "", sortDir: "desc", limit: 50, title: "", numberFormat: "auto", currency: "USD", orientation: "vertical", stacked: false, showValues: false, totals: true, heatmap: false, trend: "", trendGrain: "month", compare: "", higherIsBetter: true, sparkline: true, completePeriods: true };
+/** How many periods a KPI over time fetches: a trend line, and a year back to compare with. */
+const KPI_PERIODS: Record<string, number> = { day: 400, week: 60, month: 25, quarter: 12, year: 10 };
 
 function outName(ys: State["ys"], i: number): string {
   const y = ys[i];
@@ -66,6 +75,16 @@ export function toSpecs(s: State): { query: QuerySpec; view: ViewSpec } {
   const display = { title: s.title || null, number_format: s.numberFormat, currency: s.currency, orientation: s.orientation, stacked: s.stacked, show_values: s.showValues, totals: s.totals, heatmap: s.heatmap };
   // A sort on a column the chart no longer outputs (e.g. after changing the x field) is dropped.
   const sortOn = (outs: string[]) => (s.sortBy && outs.includes(s.sortBy) ? [{ column: s.sortBy, direction: s.sortDir }] : []);
+  if (s.mark === "kpi" && s.trend) {
+    const grain = s.trendGrain || "month";
+    return {
+      query: { dimensions: [s.trend], measures: measures.slice(0, 1), filters, sort: [{ column: s.trend, direction: "desc" }], limit: KPI_PERIODS[grain] ?? 25, time_grain: { [s.trend]: grain } },
+      view: {
+        mark: "kpi", encodings: [{ channel: "x", field: s.trend }, ...yNames.slice(0, 1).map((f) => ({ channel: "y" as const, field: f }))], ...display, width: 360, height: 180,
+        time_grain: grain, compare: s.compare || null, higher_is_better: s.higherIsBetter, sparkline: s.sparkline, complete_periods: s.completePeriods,
+      },
+    };
+  }
   if (s.mark === "kpi") {
     return { query: { measures: measures.slice(0, 1), filters }, view: { mark: "kpi", encodings: yNames.slice(0, 1).map((f) => ({ channel: "y", field: f })), ...display, width: 360, height: 180 } };
   }
@@ -119,6 +138,12 @@ export function fromSpecs(q: QuerySpec, v: ViewSpec): State {
     showValues: !!v.show_values,
     totals: v.totals ?? true,
     heatmap: !!v.heatmap,
+    trend: v.mark === "kpi" ? (v.encodings.find((e) => e.channel === "x")?.field ?? "") : "",
+    trendGrain: (v.mark === "kpi" && x && (q.time_grain?.[x] ?? v.time_grain)) || "month",
+    compare: v.compare ?? "",
+    higherIsBetter: v.higher_is_better ?? true,
+    sparkline: v.sparkline ?? true,
+    completePeriods: v.complete_periods ?? true,
   };
 }
 
@@ -343,6 +368,32 @@ export default function ChartBuilder() {
                 )}
               </div>
             </div>
+            {state.mark === "kpi" && (
+              <>
+                <label className="field" title="Show the latest period's value, its trend and a comparison">
+                  Over time
+                  {fieldSelect({ value: state.trend, onChange: (v) => set({ trend: v }), allowEmpty: "— (one number for all rows)", only: cols.filter((c) => c.type === "date") })}
+                </label>
+                {state.trend && (
+                  <>
+                    <label className="field">
+                      Period
+                      <select className="input input-sm" value={state.trendGrain} onChange={(e) => set({ trendGrain: e.target.value })} disabled={!editable}>
+                        {["day", "week", "month", "quarter", "year"].map((g) => <option key={g} value={g}>{g[0].toUpperCase() + g.slice(1)}</option>)}
+                      </select>
+                    </label>
+                    <label className="field">
+                      Compare with
+                      <select className="input input-sm" value={state.compare} onChange={(e) => set({ compare: e.target.value as State["compare"] })} disabled={!editable}>
+                        <option value="">Nothing</option>
+                        <option value="previous">Previous period</option>
+                        <option value="year">Same period last year</option>
+                      </select>
+                    </label>
+                  </>
+                )}
+              </>
+            )}
             {["bar", "line", "area", "scatter", "table", "pivot"].includes(state.mark) && (
               <label className="field">
                 {state.mark === "table" ? "Then by" : state.mark === "pivot" ? "Columns" : "Split by (colour)"}
@@ -415,6 +466,17 @@ export default function ChartBuilder() {
                   <input type="checkbox" checked={state.totals} onChange={(e) => set({ totals: e.target.checked })} disabled={!editable} /> Totals
                 </label>
                 <label className="check"><input type="checkbox" checked={state.heatmap} onChange={(e) => set({ heatmap: e.target.checked })} disabled={!editable} /> Heat map (shade cells by value)</label>
+              </>
+            )}
+            {state.mark === "kpi" && state.trend && (
+              <>
+                <label className="check"><input type="checkbox" checked={state.sparkline} onChange={(e) => set({ sparkline: e.target.checked })} disabled={!editable} /> Trend line</label>
+                <label className="check" title="A month that has only just begun would look like a fall; leave it out until it ends">
+                  <input type="checkbox" checked={state.completePeriods} onChange={(e) => set({ completePeriods: e.target.checked })} disabled={!editable} /> Leave out the current period (still in progress)
+                </label>
+                {state.compare && (
+                  <label className="check"><input type="checkbox" checked={!state.higherIsBetter} onChange={(e) => set({ higherIsBetter: !e.target.checked })} disabled={!editable} /> Lower is better (a fall shows green)</label>
+                )}
               </>
             )}
           </div>

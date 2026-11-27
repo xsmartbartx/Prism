@@ -199,6 +199,35 @@ class ViewSpec(BaseModel):
         ),
     )
 
+    compare: str | None = Field(
+        default=None,
+        pattern="^(previous|year)$",
+        description=(
+            "KPI over time: compare the latest period with the one before it ('previous') or "
+            "with the same period a year earlier ('year'). Needs a date x encoding."
+        ),
+    )
+
+    higher_is_better: bool = Field(
+        default=True, description="KPI comparison: whether a rise is shown as good (green)."
+    )
+
+    sparkline: bool = Field(default=True, description="KPI over time: draw the trend line.")
+
+    complete_periods: bool = Field(
+        default=True,
+        description="KPI over time: leave out the period still in progress (as of today).",
+    )
+
+    as_of: str | None = Field(
+        default=None,
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+        description=(
+            "KPI over time: today's date, set by the server when complete_periods is on; "
+            "periods starting on or after the one containing it are left out."
+        ),
+    )
+
     model_config = ConfigDict(frozen=True)
 
     def encodings_for(self, channel: EncodingChannel) -> list[Encoding]:
@@ -254,4 +283,6 @@ def validate_view(spec: ViewSpec, output_columns: list[str] | set[str]) -> list[
         errors.append("Use either several y encodings or a color encoding, not both")
     if spec.mark == MarkType.PIVOT and len(spec.encodings_for(EncodingChannel.Y)) > 1:
         errors.append("A pivot table shows one value; pick one")
+    if spec.mark == MarkType.KPI and spec.compare and not spec.encoding_for(EncodingChannel.X):
+        errors.append("A KPI comparison needs a date field to compare periods over")
     return errors

@@ -207,6 +207,8 @@ class ArtifactService:
     ) -> QueryOutcome:
         if view.mark == MarkType.PIVOT and (pivot_errors := _pivot_query_errors(query, view)):
             raise BadRequest("; ".join(pivot_errors))
+        if view.mark == MarkType.KPI and (kpi_errors := _kpi_query_errors(query, view)):
+            raise BadRequest("; ".join(kpi_errors))
         outcome = self.queries.run(s, actor, ds, query)
         errors = validate_view(view, list(outcome.result.columns))
         if errors:
@@ -227,6 +229,9 @@ class ArtifactService:
         update = dict(overrides or {})
         if view.mark == MarkType.PIVOT:
             update["total_function"] = _pivot_totals(query) if view.totals else None
+        if view.mark == MarkType.KPI and view.encoding_for(EncodingChannel.X):
+            # "Today" for leaving out the period still in progress; the renderer has no clock.
+            update["as_of"] = utcnow().date().isoformat() if view.complete_periods else None
         grain = _category_grain(query, view)
         if grain and not view.time_grain:
             # The query buckets the category axis by time but the view does not say so (charts
@@ -737,6 +742,20 @@ def _category_grain(query: QuerySpec, view: ViewSpec) -> str | None:
         return None
     grain = query.time_grain.get(enc.field)
     return grain.value if grain is not None else None
+
+
+def _kpi_query_errors(query: QuerySpec, view: ViewSpec) -> list[str]:
+    """A KPI over time needs one row per period: one value, grouped by its date field only."""
+    xe = view.encoding_for(EncodingChannel.X)
+    if xe is None:
+        return []
+    if query.columns or len(query.measures) != 1:
+        return ["A KPI over time shows one value per period: pick one value"]
+    if list(query.dimensions) != [xe.field]:
+        return [f"A KPI over time groups by its date field ({xe.field}) only"]
+    if xe.field not in query.time_grain:
+        return [f"Pick a time bucket (day, week, month, quarter or year) for {xe.field}"]
+    return []
 
 
 def _pivot_query_errors(query: QuerySpec, view: ViewSpec) -> list[str]:
