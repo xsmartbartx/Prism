@@ -23,7 +23,13 @@ from server.container import Services
 from server.db.models import Chart, Dashboard, Share, Workspace
 from server.errors import NotFound
 from server.services.artifacts import ArtifactService
-from server.services.dashboard_filters import Selection, parse_selections
+from server.services.dashboard_filters import (
+    ALL,
+    CUSTOM,
+    PRESETS,
+    Selection,
+    parse_selections,
+)
 
 router = APIRouter(include_in_schema=False)
 
@@ -110,8 +116,18 @@ def _filter_form(
         label = html.escape(opts["label"])
         sel = chosen.get(i)
         if d["kind"] == "date_range":
-            start = sel.start.isoformat() if sel and sel.start else ""
-            end = sel.end.isoformat() if sel and sel.end else ""
+            period = (sel.preset or CUSTOM) if sel else ALL
+            choices = [(ALL, "All time"), *PRESETS.items(), (CUSTOM, "Custom range")]
+            menu = "".join(
+                f'<option value="{k}"{" selected" if k == period else ""}>{html.escape(v)}</option>'
+                for k, v in choices
+            )
+            note = ""
+            if sel and sel.preset and sel.start and sel.end:
+                note = f'<span class="note">{sel.start.isoformat()} – {sel.end.isoformat()}</span>'
+            # The date inputs hold a custom range only; "Custom range" makes them count.
+            start = sel.start.isoformat() if sel and sel.start and not sel.preset else ""
+            end = sel.end.isoformat() if sel and sel.end and not sel.preset else ""
             # Widen the data's span to cover a saved selection, or the browser would refuse to
             # submit the form (an out-of-range date input is invalid) after a data refresh.
             lo = min(x for x in (opts.get("min"), start, end) if x) if opts.get("min") else ""
@@ -119,6 +135,7 @@ def _filter_form(
             bounds = f'min="{lo}" max="{hi}"'
             parts.append(
                 f'<span class="f">{label} '
+                f'<select name="fr{i}" aria-label="{label} period">{menu}</select> {note}'
                 f'<input type="date" name="ff{i}" value="{start}" {bounds} '
                 f'aria-label="{label} from"> – '
                 f'<input type="date" name="ft{i}" value="{end}" {bounds} '

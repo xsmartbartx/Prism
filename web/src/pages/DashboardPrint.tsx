@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { Printer } from "lucide-react";
 import { get, type Dashboard, type TileRender } from "../api";
 import { useLoad } from "../app-state";
-import { FILTER_PARAM, readCross, withoutCross } from "../components/DashboardFilters";
+import { FILTER_PARAM, dateMode, presetLabel, readCross, withoutCross } from "../components/DashboardFilters";
 import { ChartSvg, ErrorBox, PageLoading } from "../components/ui";
 
 const PAGE_WIDTH = 1000; // CSS px across the printable area; tiles are sized from it
@@ -16,8 +16,10 @@ function filterSummary(d: Dashboard, params: URLSearchParams): string[] {
       const values = params.getAll(`fv${i}`);
       if (values.length) out.push(`${f.label}: ${values.join(", ")}`);
     } else {
+      const mode = dateMode(params, i, f);
       const from = params.get(`ff${i}`), to = params.get(`ft${i}`);
-      if (from || to) out.push(`${f.label}: ${from ?? "…"} to ${to ?? "…"}`);
+      if (mode === "custom" && (from || to)) out.push(`${f.label}: ${from ?? "…"} to ${to ?? "…"}`);
+      else if (mode !== "all" && mode !== "custom") out.push(`${f.label}: ${presetLabel(mode)}`);
     }
   });
   const cross = readCross(params);

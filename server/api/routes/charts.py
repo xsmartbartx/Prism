@@ -17,7 +17,12 @@ from server.errors import NotFound
 from server.services import audit
 from server.services.artifacts import parse_specs
 from server.services.context import Actor
-from server.services.dashboard_filters import MAX_FILTERS, parse_cross_filter, parse_selections
+from server.services.dashboard_filters import (
+    MAX_FILTERS,
+    PRESETS,
+    parse_cross_filter,
+    parse_selections,
+)
 from server.services.queries import jsonable_rows
 
 router = APIRouter(prefix="/api/v1", tags=["charts"])
@@ -51,6 +56,8 @@ class DashboardFilterIn(BaseModel):
     field: str = Field(min_length=1, max_length=200)
     kind: Literal["values", "date_range"] = "values"
     label: str = Field(default="", max_length=80)
+    # A date range's period while a viewer has not chosen one ("last_month", …).
+    default: str | None = Field(default=None, max_length=40)
 
 
 class DashboardIn(BaseModel):
@@ -357,6 +364,8 @@ def _selection_text(sel: Any) -> str:
         return ", ".join(sel.values)
     start = sel.start.isoformat() if sel.start else "…"
     end = sel.end.isoformat() if sel.end else "…"
+    if sel.preset:
+        return f"{PRESETS[sel.preset]} ({start} to {end})"
     return f"{start} to {end}"
 
 

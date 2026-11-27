@@ -129,3 +129,69 @@ class TestApply:
 def test_non_ascii_digit_indices_are_ignored() -> None:
     sel = parse_selections(DEFS, [("fv²", "x"), ("ff٣", "2026-01-01"), ("fv0", "EU")])
     assert [(s.field, s.values) for s in sel] == [("Region", ("EU",))]
+
+
+class TestRelativePeriods:
+    TODAY = date(2026, 11, 27)
+
+    @pytest.mark.parametrize(
+        ("preset", "today", "start", "end"),
+        [
+            ("last_7_days", date(2026, 11, 27), date(2026, 11, 21), date(2026, 11, 27)),
+            ("last_30_days", date(2026, 3, 1), date(2026, 1, 31), date(2026, 3, 1)),
+            ("last_90_days", date(2026, 11, 27), date(2026, 8, 30), date(2026, 11, 27)),
+            ("this_month", date(2026, 2, 10), date(2026, 2, 1), date(2026, 2, 28)),
+            ("last_month", date(2026, 1, 15), date(2025, 12, 1), date(2025, 12, 31)),
+            ("last_month", date(2026, 3, 31), date(2026, 2, 1), date(2026, 2, 28)),
+            ("this_quarter", date(2026, 11, 27), date(2026, 10, 1), date(2026, 12, 31)),
+            ("last_quarter", date(2026, 2, 3), date(2025, 10, 1), date(2025, 12, 31)),
+            ("last_quarter", date(2026, 11, 27), date(2026, 7, 1), date(2026, 9, 30)),
+            ("this_year", date(2026, 11, 27), date(2026, 1, 1), date(2026, 12, 31)),
+            ("last_year", date(2026, 1, 1), date(2025, 1, 1), date(2025, 12, 31)),
+            ("last_12_months", date(2026, 11, 27), date(2025, 11, 1), date(2026, 10, 31)),
+            ("last_12_months", date(2026, 1, 5), date(2025, 1, 1), date(2025, 12, 31)),
+        ],
+    )
+    def test_periods(self, preset: str, today: date, start: date, end: date) -> None:
+        from server.services.dashboard_filters import preset_range
+
+        assert preset_range(preset, today) == (start, end)
+
+    def test_every_preset_resolves(self) -> None:
+        from server.services.dashboard_filters import PRESETS, preset_range
+
+        for p in PRESETS:
+            first, last = preset_range(p, self.TODAY)
+            assert first <= last
+
+    def test_selected_period_and_default(self) -> None:
+        defs = [DEFS[0], {**DEFS[1], "default": "last_month"}]
+        picked = parse_selections(defs, [("fr1", "this_year")], today=self.TODAY)
+        assert [(s.start, s.end, s.preset) for s in picked] == [(date(2026, 1, 1), date(2026, 12, 31), "this_year")]
+        # Nothing said about the filter: its default period, worked out from today.
+        default = parse_selections(defs, [("fv0", "EU")], today=self.TODAY)
+        assert (default[1].start, default[1].end, default[1].preset) == (date(2026, 10, 1), date(2026, 10, 31), "last_month")
+        # "all" clears the default; explicit dates (with or without "custom") replace it.
+        assert parse_selections(defs, [("fr1", "all")], today=self.TODAY) == []
+        for params in ([("ff1", "2026-01-01")], [("fr1", "custom"), ("ff1", "2026-01-01")]):
+            (sel,) = parse_selections(defs, params, today=self.TODAY)
+            assert (sel.start, sel.end, sel.preset) == (date(2026, 1, 1), None, None)
+        # "custom" without dates, or an unknown period: no filter, and no default sneaking back.
+        assert parse_selections(defs, [("fr1", "custom")], today=self.TODAY) == []
+        assert parse_selections(defs, [("fr1", "next_decade")], today=self.TODAY) == []
+
+    def test_defaults_are_checked(self) -> None:
+        out = clean_definitions([{"field": "Order Date", "kind": "date_range", "default": "last_month"}], AVAILABLE)
+        assert out == [{"field": "Order Date", "kind": "date_range", "label": "Order Date", "default": "last_month"}]
+        assert "default" not in clean_definitions([{"field": "Order Date", "kind": "date_range", "default": None}], AVAILABLE)[0]
+        with pytest.raises(BadRequest, match="Unknown period"):
+            clean_definitions([{"field": "Order Date", "kind": "date_range", "default": "someday"}], AVAILABLE)
+        with pytest.raises(BadRequest, match="Only a date range"):
+            clean_definitions([{"field": "Region", "default": "last_month"}], AVAILABLE)
+
+    def test_links_keep_periods_relative(self) -> None:
+        defs = [DEFS[0], {**DEFS[1], "default": "last_month"}]
+        for params in ([("fr1", "last_quarter")], [("ff1", "2026-01-01"), ("ft1", "2026-02-01")]):
+            sel = parse_selections(defs, params, today=self.TODAY)
+            assert parse_selections(defs, encode_selections(sel), today=self.TODAY) == sel
+        assert ("fr1", "last_quarter") in encode_selections(parse_selections(defs, [("fr1", "last_quarter")], today=self.TODAY))

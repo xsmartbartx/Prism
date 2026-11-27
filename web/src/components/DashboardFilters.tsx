@@ -4,9 +4,27 @@ import { get, post, type DashboardFilter, type FilterField, type FilterOptions }
 
 /**
  * URL parameters that carry filter selections: fv<i> (values), ff<i> / ft<i> (date from / to),
- * and the cross-filter a click in a tile sets: xf (field), xv (values), xg (time grain), xc (clicked chart).
+ * fr<i> (a period relative to today, "custom" or "all"), and the cross-filter a click in a tile
+ * sets: xf (field), xv (values), xg (time grain), xc (clicked chart).
  */
-export const FILTER_PARAM = /^(f[vft]\d+|x[fvgc])$/;
+export const FILTER_PARAM = /^(f[vftr]\d+|x[fvgc])$/;
+
+/** Periods relative to today, worked out by the server (same keys as its PRESETS). */
+export const DATE_PRESETS: [string, string][] = [
+  ["last_7_days", "Last 7 days"], ["last_30_days", "Last 30 days"], ["last_90_days", "Last 90 days"],
+  ["this_month", "This month"], ["last_month", "Last month"],
+  ["this_quarter", "This quarter"], ["last_quarter", "Last quarter"],
+  ["this_year", "This year"], ["last_year", "Last year"], ["last_12_months", "Last 12 full months"],
+];
+export const presetLabel = (key: string): string => DATE_PRESETS.find(([k]) => k === key)?.[1] ?? key;
+
+/** What a date-range filter currently selects: a period key, "custom" (dates) or "all". */
+export function dateMode(params: URLSearchParams, index: number, filter: DashboardFilter): string {
+  const period = params.get(`fr${index}`);
+  if (period) return period;
+  if (params.get(`ff${index}`) || params.get(`ft${index}`)) return "custom";
+  return filter.default || "all";
+}
 const CROSS_KEYS = ["xf", "xv", "xg", "xc"];
 
 export interface CrossFilter { field: string; values: string[]; grain: string | null; source: string }
@@ -83,6 +101,7 @@ export function FilterBar({ dashboardId, filters, params, setParams }: {
   setParams: (p: URLSearchParams) => void;
 }) {
   const active = [...params.keys()].some((k) => FILTER_PARAM.test(k));
+  const hasDefaults = filters.some((f) => f.default);
   const update = (mutate: (p: URLSearchParams) => void) => {
     const next = new URLSearchParams(params);
     mutate(next);
@@ -100,7 +119,7 @@ export function FilterBar({ dashboardId, filters, params, setParams }: {
       )}
       {active && (
         <button className="btn btn-ghost btn-sm" onClick={() => update((p) => [...p.keys()].filter((k) => FILTER_PARAM.test(k)).forEach((k) => p.delete(k)))}>
-          <X size={14} /> Clear
+          <X size={14} /> {hasDefaults ? "Reset" : "Clear"}
         </button>
       )}
     </div>
@@ -199,17 +218,32 @@ function ValuePicker({ dashboardId, index, filter, params, update }: ControlProp
 }
 
 function DateRange({ dashboardId, index, filter, params, update }: ControlProps) {
-  const { opts } = useOptions(dashboardId, index, true);
+  const mode = dateMode(params, index, filter);
+  const { opts } = useOptions(dashboardId, index, mode === "custom");
   const from = params.get(`ff${index}`) ?? "";
   const to = params.get(`ft${index}`) ?? "";
-  const set = (k: string, v: string) => update((p) => (v ? p.set(k, v) : p.delete(k)));
+  // Every change says what was chosen ("fr"), so the dashboard's default period stays away.
+  const choose = (period: string) => update((p) => {
+    p.set(`fr${index}`, period);
+    if (period !== "custom") { p.delete(`ff${index}`); p.delete(`ft${index}`); }
+  });
+  const setDate = (k: string, v: string) => update((p) => { p.set(`fr${index}`, "custom"); if (v) p.set(k, v); else p.delete(k); });
   const bounds = { min: opts?.min ?? undefined, max: opts?.max ?? undefined };
   return (
-    <div className={`filter-ctl filter-dates ${from || to ? "is-active" : ""}`}>
+    <div className={`filter-ctl filter-dates ${mode !== "all" ? "is-active" : ""}`}>
       <span className="muted small">{filter.label}</span>
-      <input type="date" className="input input-sm" value={from} {...bounds} onChange={(e) => set(`ff${index}`, e.target.value)} aria-label={`${filter.label} from`} />
-      <span className="muted small">–</span>
-      <input type="date" className="input input-sm" value={to} {...bounds} onChange={(e) => set(`ft${index}`, e.target.value)} aria-label={`${filter.label} to`} />
+      <select className="input input-sm" style={{ width: "auto" }} value={mode} onChange={(e) => choose(e.target.value)} aria-label={`${filter.label} period`}>
+        <option value="all">All time</option>
+        {DATE_PRESETS.map(([k, label]) => <option key={k} value={k}>{label}{filter.default === k ? " (default)" : ""}</option>)}
+        <option value="custom">Custom range…</option>
+      </select>
+      {mode === "custom" && (
+        <>
+          <input type="date" className="input input-sm" value={from} {...bounds} onChange={(e) => setDate(`ff${index}`, e.target.value)} aria-label={`${filter.label} from`} />
+          <span className="muted small">–</span>
+          <input type="date" className="input input-sm" value={to} {...bounds} onChange={(e) => setDate(`ft${index}`, e.target.value)} aria-label={`${filter.label} to`} />
+        </>
+      )}
     </div>
   );
 }
@@ -250,6 +284,13 @@ export function FilterEditor({ chartIds, filters, onChange }: {
           <input className="input input-sm" style={{ maxWidth: 220 }} value={f.label} maxLength={80} aria-label={`Label for ${f.field}`}
             onChange={(e) => onChange(filters.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} />
           <span className="chip">{f.field} · {f.kind === "date_range" ? "date range" : "values"}</span>
+          {f.kind === "date_range" && (
+            <select className="input input-sm" style={{ width: "auto" }} value={f.default ?? ""} aria-label={`Default period for ${f.label}`} title="The period the dashboard opens with"
+              onChange={(e) => onChange(filters.map((x, j) => (j === i ? { ...x, default: e.target.value || null } : x)))}>
+              <option value="">Opens on: all time</option>
+              {DATE_PRESETS.map(([k, label]) => <option key={k} value={k}>Opens on: {label.toLowerCase()}</option>)}
+            </select>
+          )}
           {missing(f) && <span className="badge badge-warning">no chart has this field</span>}
           <span style={{ flex: 1 }} />
           <button className="btn btn-ghost btn-icon btn-sm" aria-label={`Remove filter ${f.label}`} onClick={() => onChange(filters.filter((_, j) => j !== i))}><X size={14} /></button>

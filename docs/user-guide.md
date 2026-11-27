@@ -137,7 +137,9 @@ A pivot lays one value out as a grid: pick a field for **Rows**, optionally one 
 In edit mode, **Filters → Add a filter** lets viewers narrow the whole dashboard at once (up to six filters):
 
 - **Values**: viewers tick one or more values, such as regions or products. Works on text, whole-number, true/false and date fields.
-- **Date range**: viewers pick a from and/or to date. Works on date fields.
+- **Date range**: viewers pick a period relative to today (*Last 7, 30 or 90 days*, *This* or *Last month*, *quarter* or *year*, *Last 12 full months*), *All time*, or a *Custom range* with a from and/or to date. Works on date fields.
+
+A date-range filter can have a **default period**, set in edit mode next to the filter (**Opens on: last month**, say). The dashboard opens on it in the app, on share links, in print and in Excel exports, so a monthly report always shows the month just ended without anyone changing it. Viewers can pick another period or *All time*; **Reset** goes back to the default. Periods are worked out from today's date (UTC) every time, and exports name both the period and its dates (*Last month (2026-10-01 to 2026-10-31)*).
 
 A filter applies to every chart whose dataset has a field of that name. Matching ignores case and spacing, so `Region` and `region` match. A chart without the field stays unfiltered and says so (*Not filtered by Region*), so its numbers are never mistaken for the filtered slice. A filter only narrows what a chart already shows, on top of the chart's own filters.
 
