@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.10.0 — 2026-11-27
 
 - KPI comparisons: give a KPI card a date field (**Over time**) and a **Period** (day to year), and it shows the latest period's value with a trend line, and with **Compare with** its change against the previous period or the same period a year earlier (for example *Revenue · Oct 2026 · 182,201 · ▲ 12.4% vs Sep 2026*). Rises show green and falls red, or the other way round with **Lower is better**. The period still in progress is left out by default, so a month that has just begun is not shown as a fall. Changes of percentages are told in percentage points, a missing comparison period is said rather than skipped over, and screen readers hear the comparison in words.
 
