@@ -159,6 +159,7 @@ export interface Encoding { channel: "x" | "y" | "color" | "size"; field: string
 export interface ViewSpec {
   mark: "bar" | "line" | "area" | "scatter" | "pie" | "kpi" | "table" | "pivot"; encodings: Encoding[]; title?: string | null;
   totals?: boolean; heatmap?: boolean;
+  compare?: "previous" | "year" | null; higher_is_better?: boolean; sparkline?: boolean; complete_periods?: boolean;
   orientation?: "vertical" | "horizontal"; stacked?: boolean; show_values?: boolean; show_legend?: boolean;
   number_format?: string; currency?: string; time_grain?: string | null; width?: number; height?: number; theme?: string; locale?: string;
 }

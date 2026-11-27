@@ -135,6 +135,14 @@ curl -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
   -d '{"fields": ["Order Date", "Revenue"]}' $PRISM/api/v1/datasets/<dataset_id>/recommend
 ```
 
+A KPI over time is a `kpi` chart with an `x` encoding on a date field and one `y` value; its query groups by that field only, with a `time_grain`, and fetches enough periods for the trend and the comparison (sorted newest first, with a `limit`). View options: `"compare": "previous" | "year"`, `"higher_is_better"` (default `true`), `"sparkline"` (default `true`) and `"complete_periods"` (default `true`: the period containing today is left out).
+
+```json
+{"query": {"dimensions": ["Order Date"], "time_grain": {"Order Date": "month"}, "measures": [{"column": "Revenue", "function": "sum"}],
+           "sort": [{"column": "Order Date", "direction": "desc"}], "limit": 25},
+ "view": {"mark": "kpi", "compare": "year", "encodings": [{"channel": "x", "field": "Order Date"}, {"channel": "y", "field": "Revenue"}]}}
+```
+
 A pivot table is a chart with `"mark": "pivot"`: the `x` encoding is the rows, an optional `color` encoding the columns and one `y` encoding the value; the query groups by both fields with that one measure. `"totals"` (default `true`) adds row, column and grand totals when the measure's function allows them (`sum`, `count`, `min`, `max`; never for `avg`, `median`, `count_distinct` or aggregate fields), and `"heatmap": true` shades cells by value. The query must group by those two fields only, so each cell is one row; other groupings, or ungrouped `columns`, answer 400. Give the query a `limit` that covers every cell (the builder uses 5000).
 
 ```json

@@ -110,6 +110,15 @@ From a dataset click **New chart** (or **Charts → New chart**).
 
 The preview is rendered live by the server exactly as it will appear in exports and share pages. **Show data** reveals the numbers behind the chart. **Save** stores the chart; **SVG** and **Data** export it.
 
+### KPI comparisons
+
+A KPI card shows one number. Pick a date field under **Over time** and a **Period** (day, week, month, quarter or year), and it shows the **latest period's** value instead, with a trend line of the periods before it.
+
+- **Compare with** adds the change against the **previous period** or the **same period last year**, e.g. *▲ 12.4% vs Sep 2026 (162,078)*. A rise is green and a fall red; tick **Lower is better** for costs, churn or delays.
+- **Leave out the current period** (on by default) ignores the period still in progress, so on 3 November a KPI by month shows October rather than three days of November.
+- Values formatted as percentages change in percentage points (*▲ 2.1 pp*). If the comparison period has no data, the card says so.
+- Dashboard filters apply as usual: with a date-range filter, the card shows the latest period inside the range.
+
 ### Pivot tables
 
 A pivot lays one value out as a grid: pick a field for **Rows**, optionally one for **Columns**, and a **Value** (for example *sum of Revenue* by *Region* × *Channel*). Empty combinations show *–*.
