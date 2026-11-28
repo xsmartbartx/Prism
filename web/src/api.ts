@@ -165,7 +165,7 @@ export interface ViewSpec {
 }
 export interface Chart { id: string; dataset_id: string; name: string; description: string; query: QuerySpec; view: ViewSpec; owner_id: string; updated_at: string; created_at: string }
 export interface Tile { chart_id: string; x: number; y: number; w: number; h: number }
-export interface DashboardFilter { field: string; kind: "values" | "date_range"; label: string }
+export interface DashboardFilter { field: string; kind: "values" | "date_range"; label: string; default?: string | null }
 export interface Dashboard { id: string; name: string; description: string; layout: Tile[]; filters: DashboardFilter[]; updated_at: string; charts?: Record<string, Chart> }
 export interface FilterField { field: string; types: PrismType[]; charts: number; kinds: DashboardFilter["kind"][] }
 export interface FilterOptions { field: string; kind: DashboardFilter["kind"]; label: string; values?: string[]; truncated?: boolean; omitted_long?: number; min?: string | null; max?: string | null }

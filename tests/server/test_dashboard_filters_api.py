@@ -264,3 +264,39 @@ def test_a_bucketed_axis_selects_its_whole_bucket(client: TestClient) -> None:
     svg = _tile(client, did, monthly)["svg"]
     assert 'data-pick-grain="month"' in svg and 'data-pick="2026-02-01"' in svg
     assert "Feb 2026" in svg  # and the buckets are labelled as months
+
+
+def test_relative_periods_and_defaults(client: TestClient) -> None:
+    import io
+
+    from openpyxl import load_workbook
+
+    a, _, dash = _setup(client)
+    did = dash["id"]
+    filters = [{"field": "Region", "kind": "values"},
+               {"field": "Order Date", "kind": "date_range", "label": "Ordered", "default": "last_12_months"}]
+    r = client.put(f"/api/v1/dashboards/{did}", headers=H,
+                   json={"name": "Sales", "layout": dash["layout"], "filters": filters})
+    assert r.status_code == 200, r.text
+    assert r.json()["filters"][1]["default"] == "last_12_months"
+    bad = client.put(f"/api/v1/dashboards/{did}", headers=H, json={
+        "name": "Sales", "layout": dash["layout"],
+        "filters": [{"field": "Region", "kind": "values", "default": "last_month"}]})
+    assert bad.status_code == 400 and "Only a date range" in bad.text
+
+    # Opened without parameters, the tile is narrowed by the default; "all" clears it.
+    assert "Ordered" in _tile(client, did, a)["applied"]
+    assert "Ordered" not in _tile(client, did, a, "&fr1=all")["applied"]
+    assert "Ordered" in _tile(client, did, a, "&fr1=last_year")["applied"]
+
+    # The export says which period and which dates.
+    book = load_workbook(io.BytesIO(client.get(f"/api/v1/dashboards/{did}/export").content), read_only=True)
+    about = {row[0]: row[1] for row in book["About"].iter_rows(values_only=True)}
+    assert about["Filter: Ordered"].startswith("Last 12 full months (")
+
+    # A share page offers the periods, with the default chosen.
+    share = client.post("/api/v1/shares", headers=H,
+                        json={"artifact_type": "dashboard", "artifact_id": did}).json()
+    page = client.get(share["url"]).text
+    assert '<select name="fr1"' in page and '<option value="last_12_months" selected>' in page
+    assert '<option value="all" selected>' in client.get(share["url"] + "?fr1=all").text

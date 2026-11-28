@@ -12,6 +12,13 @@ encoding works for the app's API and for a share page's HTML form without JavaSc
 
     fv<i>=<value>   (repeatable)   a "values" filter: keep rows whose field is one of these
     ff<i>=<date>    ft<i>=<date>   a "date_range" filter: from / to, inclusive, ISO dates
+    fr<i>=<period>                 a "date_range" filter: a period relative to today
+                                   ("last_month", …; see PRESETS), "custom" for the ff/ft
+                                   dates, or "all" for no filter
+
+A date-range filter can name a default period. It applies while the parameters say nothing
+about that filter, so a dashboard keeps showing, say, last month as months go by, and a
+viewer clears it with ``fr<i>=all``.
 
 A cross-filter is what clicking a bar, slice or point in one tile sets: the same kind of
 narrowing, on any field, without a declared filter. It applies to every tile except the one
@@ -31,6 +38,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
 
+from core.clock import utcnow
 from data.query import QuerySpec
 from data.query.compiler import coerce_filter_value
 from data.query.spec import FilterOp, FilterSpec
@@ -41,6 +49,20 @@ MAX_SELECTED = 100
 MAX_VALUE_CHARS = 200
 VALUE_LIMIT = 200  # distinct values offered in a picker
 KINDS = ("values", "date_range")
+# Periods relative to today (UTC) that a date-range filter can select or default to.
+PRESETS: dict[str, str] = {
+    "last_7_days": "Last 7 days",
+    "last_30_days": "Last 30 days",
+    "last_90_days": "Last 90 days",
+    "this_month": "This month",
+    "last_month": "Last month",
+    "this_quarter": "This quarter",
+    "last_quarter": "Last quarter",
+    "this_year": "This year",
+    "last_year": "Last year",
+    "last_12_months": "Last 12 full months",
+}
+ALL, CUSTOM = "all", "custom"
 VALUE_TYPES = {"string", "integer", "boolean", "date"}
 
 
@@ -68,6 +90,7 @@ class Selection:
     values: tuple[str, ...] = ()
     start: date | None = None
     end: date | None = None
+    preset: str | None = None  # the relative period the dates were worked out from
 
 
 def clean_definitions(
@@ -103,9 +126,46 @@ def clean_definitions(
             raise BadRequest(f"'{field}' is not a date, so it cannot have a date range")
         if kind == "values" and not types & VALUE_TYPES:
             raise BadRequest(f"'{field}' holds decimals; pick values from a text or date field")
+        default = item.get("default") or None
+        if default is not None:
+            if kind != "date_range":
+                raise BadRequest(f"Only a date range can have a default period ('{field}')")
+            if default not in PRESETS:
+                raise BadRequest(f"Unknown period '{default}'")
         seen.add(field_key(field))
-        out.append({"field": field, "kind": kind, "label": label})
+        entry = {"field": field, "kind": kind, "label": label}
+        if default:
+            entry["default"] = str(default)
+        out.append(entry)
     return out
+
+
+def preset_range(preset: str, today: date) -> tuple[date, date]:
+    """The first and last day (inclusive) of a relative period, as of ``today``."""
+    if preset.startswith("last_") and preset.endswith("_days"):
+        days = int(preset[5:-5])
+        return today - timedelta(days=days - 1), today
+    month = today.replace(day=1)
+    quarter = month.replace(month=(month.month - 1) // 3 * 3 + 1)
+    year = month.replace(month=1)
+    if preset == "this_month":
+        return month, bucket_end(month, "month")
+    if preset == "last_month":
+        start = (month - timedelta(days=1)).replace(day=1)
+        return start, month - timedelta(days=1)
+    if preset == "this_quarter":
+        return quarter, bucket_end(quarter, "quarter")
+    if preset == "last_quarter":
+        start = (quarter - timedelta(days=1)).replace(day=1)
+        start = start.replace(month=(start.month - 1) // 3 * 3 + 1)
+        return start, quarter - timedelta(days=1)
+    if preset == "this_year":
+        return year, bucket_end(year, "year")
+    if preset == "last_year":
+        return year.replace(year=year.year - 1), year - timedelta(days=1)
+    if preset == "last_12_months":
+        return month.replace(year=month.year - 1), month - timedelta(days=1)
+    raise ValueError(f"Unknown period {preset!r}")
 
 
 def _iso_date(text: str | None) -> date | None:
@@ -118,20 +178,27 @@ def _iso_date(text: str | None) -> date | None:
 
 
 def parse_selections(
-    definitions: list[dict[str, Any]], params: Iterable[tuple[str, str]]
+    definitions: list[dict[str, Any]],
+    params: Iterable[tuple[str, str]],
+    *,
+    today: date | None = None,
 ) -> list[Selection]:
-    """Read ``fv<i>`` / ``ff<i>`` / ``ft<i>`` parameters into selections (empty ones dropped).
+    """Read ``fv<i>`` / ``ff<i>`` / ``ft<i>`` / ``fr<i>`` parameters into selections (empty
+    ones dropped), applying a date range's default period when the parameters leave it unset.
 
-    Anything malformed — an unknown index, an unreadable date, an over-long value — is
-    ignored rather than rejected: a stale or hand-edited link still shows the dashboard.
+    Anything malformed — an unknown index, an unreadable date, an over-long value, an unknown
+    period — is ignored rather than rejected: a stale or hand-edited link still shows the
+    dashboard.
     """
+    today = today or utcnow().date()
     values: dict[int, list[str]] = {}
     starts: dict[int, str] = {}
     ends: dict[int, str] = {}
+    periods: dict[int, str] = {}
     for key, value in params:
         suffix = key[2:]
         # ASCII digits only: str.isdigit() also accepts characters like "²" that int() rejects.
-        if key[:2] not in ("fv", "ff", "ft") or not (suffix.isascii() and suffix.isdigit()):
+        if key[:2] not in ("fv", "ff", "ft", "fr") or not (suffix.isascii() and suffix.isdigit()):
             continue
         i = int(suffix)
         if i >= len(definitions):
@@ -144,6 +211,8 @@ def parse_selections(
                     bucket.append(v)
         elif key.startswith("ff"):
             starts[i] = value
+        elif key.startswith("fr"):
+            periods[i] = value.strip()
         else:
             ends[i] = value
 
@@ -154,6 +223,15 @@ def parse_selections(
         if kind == "values" and values.get(i):
             out.append(Selection(i, field, kind, label, values=tuple(values[i])))
         elif kind == "date_range":
+            period = periods.get(i)
+            if period is None and not (starts.get(i) or ends.get(i)):
+                period = d.get("default")  # nothing chosen for this filter: its default
+            if period == ALL:
+                continue
+            if period in PRESETS:
+                first, last = preset_range(period, today)
+                out.append(Selection(i, field, kind, label, start=first, end=last, preset=period))
+                continue
             start, end = _iso_date(starts.get(i)), _iso_date(ends.get(i))
             if start and end and start > end:
                 start, end = end, start
@@ -270,6 +348,11 @@ def encode_selections(selections: list[Selection]) -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
     for sel in selections:
         out += [(f"fv{sel.index}", v) for v in sel.values]
+        if sel.kind == "date_range":
+            # A period stays relative; explicit dates say so, or a default would replace them.
+            out.append((f"fr{sel.index}", sel.preset or CUSTOM))
+            if sel.preset:
+                continue
         if sel.start:
             out.append((f"ff{sel.index}", sel.start.isoformat()))
         if sel.end:
