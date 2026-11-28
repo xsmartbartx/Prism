@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.11.0 — 2026-11-28
 
 - Relative date ranges on dashboards: a date-range filter offers *Last 7, 30 or 90 days*, *This* or *Last month*, *quarter* or *year*, *Last 12 full months*, *All time* or a *Custom range*. Periods are worked out from today each time the dashboard is opened, so a link to *Last month* always shows last month. Authors can give a date filter a default period (**Opens on: last month**), which applies in the app, on share pages, in print and in Excel exports until a viewer picks something else; **Reset** returns to it. Exports name the period and its dates.
 
